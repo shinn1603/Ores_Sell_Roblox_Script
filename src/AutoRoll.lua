@@ -87,7 +87,7 @@ function AutoRoll.init(deps)
 
     -- 3. Tự động bấm START và đóng bảng AutoRollerPanel khi xuất hiện
     function AutoRoll.handleAutoRollerPanel(maxWait)
-        maxWait = maxWait or 2.5
+        maxWait = maxWait or 3.0
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         if not pg then return false end
 
@@ -104,52 +104,86 @@ function AutoRoll.init(deps)
 
         if not panel or not panel.Visible then return false end
 
-        -- A. Tìm và bấm nút START trong panel (DÙNG FIRESIGNAL, KHÔNG DÙNG VIM CHUỘT ẢO ĐỂ TRÁNH AUTOCLICK)
+        -- A. Tìm nút START trong panel
         local startBtn = nil
         for _, desc in ipairs(panel:GetDescendants()) do
-            if desc:IsA("GuiButton") and desc.Visible then
-                local n = desc.Name:lower()
-                local t = (desc:IsA("TextButton") and desc.Text or ""):lower()
-                if (n:find("start") or t:find("start")) and not n:find("restart") then
-                    startBtn = desc
-                    break
+            if desc:IsA("TextLabel") and desc.Text:upper():find("START") and not desc.Text:upper():find("RESTART") then
+                startBtn = desc:FindFirstAncestorWhichIsA("GuiButton")
+                if not startBtn then
+                    local frame = desc:FindFirstAncestorWhichIsA("Frame") or desc.Parent
+                    if frame then
+                        startBtn = frame:FindFirstChildWhichIsA("GuiButton", true) or frame
+                    end
                 end
-                for _, lbl in ipairs(desc:GetDescendants()) do
-                    if lbl:IsA("TextLabel") and lbl.Text:lower():find("start") then
+                if startBtn then break end
+            end
+        end
+
+        if not startBtn then
+            for _, desc in ipairs(panel:GetDescendants()) do
+                if (desc:IsA("GuiButton") or desc:IsA("Frame")) and desc.Visible then
+                    local n = desc.Name:lower()
+                    local t = (desc:IsA("TextButton") and desc.Text or ""):lower()
+                    if (n:find("start") or t:find("start")) and not n:find("restart") and not n:find("stop") then
+                        startBtn = desc
+                        break
+                    end
+                    local col = desc.BackgroundColor3
+                    if col.G > 0.5 and col.R < 0.4 and col.B < 0.4 then
                         startBtn = desc
                         break
                     end
                 end
-                if startBtn then break end
-                local col = desc.BackgroundColor3
-                if col.G > 0.5 and col.R < 0.4 and col.B < 0.4 then
-                    startBtn = desc
-                    break
-                end
             end
         end
 
+        -- Bấm START bằng cả 2 phương thức: firesignal & VirtualInputManager (đúng 1 lần)
         if startBtn then
             pcall(function()
                 if firesignal then
-                    firesignal(startBtn.Activated)
-                    firesignal(startBtn.MouseButton1Click)
-                else
+                    if startBtn.Activated then firesignal(startBtn.Activated) end
+                    if startBtn.MouseButton1Click then firesignal(startBtn.MouseButton1Click) end
+                elseif startBtn.MouseButton1Click then
                     startBtn.MouseButton1Click:Fire()
+                end
+            end)
+            pcall(function()
+                local vim = VirtualInputManager or game:GetService("VirtualInputManager")
+                if vim and startBtn.AbsolutePosition and startBtn.AbsoluteSize and startBtn.AbsoluteSize.X > 0 then
+                    local pos = startBtn.AbsolutePosition
+                    local size = startBtn.AbsoluteSize
+                    local cx = pos.X + size.X / 2
+                    local cy = pos.Y + size.Y / 2
+                    vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                    task.wait(0.06)
+                    vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
                 end
             end)
         end
 
-        task.wait(0.3)
+        -- Đợi 0.6s để game xử lý lệnh Start Roll và bắt đầu quay quặng
+        task.wait(0.6)
 
-        -- B. Tìm và bấm nút ĐÓNG [X] (DÙNG FIRESIGNAL)
+        -- B. Tìm nút ĐÓNG [X] (nút đỏ góc trên hoặc chữ X)
         local closeBtn = nil
         local top = panel:FindFirstChild("Top", true)
         if top then
             for _, desc in ipairs(top:GetDescendants()) do
                 if desc:IsA("GuiButton") and desc.Visible then
-                    closeBtn = desc
-                    break
+                    local n = desc.Name:lower()
+                    local t = (desc:IsA("TextButton") and desc.Text or ""):lower()
+                    if n:find("close") or n:find("exit") or n:find("x") or t == "x" or t:find("close") or t:find("✕") or t:find("✖") then
+                        closeBtn = desc
+                        break
+                    end
+                end
+            end
+            if not closeBtn then
+                for _, desc in ipairs(top:GetDescendants()) do
+                    if desc:IsA("GuiButton") and desc.Visible then
+                        closeBtn = desc
+                        break
+                    end
                 end
             end
         end
@@ -159,7 +193,8 @@ function AutoRoll.init(deps)
                 if desc:IsA("GuiButton") and desc.Visible then
                     local n = desc.Name:lower()
                     local t = (desc:IsA("TextButton") and desc.Text or ""):lower()
-                    if n:find("close") or n:find("exit") or n:find("cancel") or t == "x" or t:find("close") or t:find("✕") or t:find("✖") then
+                    local col = desc.BackgroundColor3
+                    if n:find("close") or n:find("exit") or t == "x" or t:find("close") or t:find("✕") or t:find("✖") or (col.R > 0.6 and col.G < 0.3 and col.B < 0.3) then
                         closeBtn = desc
                         break
                     end
@@ -167,18 +202,45 @@ function AutoRoll.init(deps)
             end
         end
 
+        -- Bấm nút Đóng
         if closeBtn then
             pcall(function()
                 if firesignal then
-                    firesignal(closeBtn.Activated)
-                    firesignal(closeBtn.MouseButton1Click)
-                else
+                    if closeBtn.Activated then firesignal(closeBtn.Activated) end
+                    if closeBtn.MouseButton1Click then firesignal(closeBtn.MouseButton1Click) end
+                elseif closeBtn.MouseButton1Click then
                     closeBtn.MouseButton1Click:Fire()
+                end
+            end)
+            pcall(function()
+                local vim = VirtualInputManager or game:GetService("VirtualInputManager")
+                if vim and closeBtn.AbsolutePosition and closeBtn.AbsoluteSize and closeBtn.AbsoluteSize.X > 0 then
+                    local pos = closeBtn.AbsolutePosition
+                    local size = closeBtn.AbsoluteSize
+                    local cx = pos.X + size.X / 2
+                    local cy = pos.Y + size.Y / 2
+                    vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                    task.wait(0.06)
+                    vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
                 end
             end)
         end
 
-        task.wait(0.15)
+        task.wait(0.4)
+
+        -- C. Dọn sạch lớp màn hình mờ xám (Dimmer / Background Overlay) của game
+        pcall(function()
+            local mf = pg:FindFirstChild("MainFrames")
+            if mf then
+                for _, child in ipairs(mf:GetChildren()) do
+                    local cName = child.Name:lower()
+                    if (cName:find("dim") or cName:find("blur") or cName:find("overlay") or cName:find("shade") or cName:find("dark") or cName:find("background")) and child:IsA("GuiObject") then
+                        child.Visible = false
+                    end
+                end
+            end
+        end)
+
         if panel.Visible then
             pcall(function() panel.Visible = false end)
         end
