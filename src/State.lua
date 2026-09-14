@@ -53,8 +53,5 @@ local defaultFuse = {
 }
 for _, o in ipairs(defaultFuse) do State.AllowedFuseOres[o] = true end
 
-return {
-    State = State,
-    defaultBuy = defaultBuy,
-    defaultFuse = defaultFuse
-}
+-- State, defaultBuy, defaultFuse are now all in local scope for bundler
+return State
