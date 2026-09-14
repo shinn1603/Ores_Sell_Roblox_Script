@@ -447,27 +447,101 @@ function Utils.clearBlurAndDimmer()
     end)
 end
 
--- Chuyển đổi chuỗi tiền ($1,500, 50k, 2.5M, 10B, 1.2T, etc.) sang số thực
+-- Bảng tỷ lệ quy đổi số tiền cho toàn bộ hệ thống (Hỗ trợ từ K, M, B, T, Qa, Qi đến Vigintillion)
+local MONEY_SUFFIXES = {
+    -- 4+ ký tự
+    ["qavg"] = 1e75, ["qivg"] = 1e78, ["sxvg"] = 1e81, ["spvg"] = 1e84, ["ocvg"] = 1e87, ["novg"] = 1e90,
+    ["cent"] = 1e303,
+    
+    -- 3 ký tự
+    ["tvg"] = 1e72, ["dvg"] = 1e69, ["uvg"] = 1e66, ["vig"] = 1e63,
+    ["utg"] = 1e96,
+    ["nod"] = 1e60, ["nond"] = 1e60,
+    ["ocd"] = 1e57, ["octd"] = 1e57,
+    ["spd"] = 1e54, ["septd"] = 1e54,
+    ["sxd"] = 1e51, ["sexd"] = 1e51,
+    ["qid"] = 1e48, ["qind"] = 1e48,
+    ["qad"] = 1e45, ["quad"] = 1e45,
+    ["td"]  = 1e42, ["tred"] = 1e42,
+    ["dd"]  = 1e39, ["duod"] = 1e39,
+    ["ud"]  = 1e36, ["und"] = 1e36,
+    ["dec"] = 1e33,
+    ["non"] = 1e30,
+    ["oct"] = 1e27,
+    ["sep"] = 1e24, ["spt"] = 1e24,
+    ["sex"] = 1e21, ["sxt"] = 1e21,
+    ["qui"] = 1e18, ["qin"] = 1e18,
+    ["qua"] = 1e15, ["qdr"] = 1e15,
+    
+    -- 2 ký tự (Phổ biến nhất trong game Sell Ores & Roblox Incremental Games)
+    ["tg"]  = 1e93,
+    ["vg"]  = 1e63,
+    ["dc"]  = 1e33,
+    ["no"]  = 1e30,
+    ["oc"]  = 1e27,
+    ["sp"]  = 1e24,
+    ["sx"]  = 1e21,
+    ["qi"]  = 1e18, -- Quintillion
+    ["qn"]  = 1e18,
+    ["qa"]  = 1e15, -- Quadrillion
+    ["qd"]  = 1e15,
+    
+    -- 1 ký tự
+    ["t"]   = 1e12,
+    ["b"]   = 1e9,
+    ["m"]   = 1e6,
+    ["k"]   = 1e3,
+    ["q"]   = 1e15, -- Fallback nếu chỉ ghi 'q'
+    ["s"]   = 1e21, -- Fallback nếu chỉ ghi 's'
+}
+
+local FORMAT_SCALES = {
+    {1e63, "Vg"},
+    {1e60, "Nod"},
+    {1e57, "Ocd"},
+    {1e54, "Spd"},
+    {1e51, "Sxd"},
+    {1e48, "Qid"},
+    {1e45, "Qad"},
+    {1e42, "Td"},
+    {1e39, "Dd"},
+    {1e36, "Ud"},
+    {1e33, "Dc"},
+    {1e30, "No"},
+    {1e27, "Oc"},
+    {1e24, "Sp"},
+    {1e21, "Sx"},
+    {1e18, "Qi"},
+    {1e15, "Qa"},
+    {1e12, "T"},
+    {1e9,  "B"},
+    {1e6,  "M"},
+    {1e3,  "K"},
+}
+
+-- Chuyển đổi chuỗi tiền ($1,500, 50k, 2.5M, 10B, 1.2T, 5.45Qa, 12.8Qi, etc.) sang số thực
 function Utils.parseMoneyString(str)
     if not str then return nil end
     local clean = tostring(str):gsub(",", ""):gsub("%$", ""):gsub("%s+", ""):lower()
-    local numStr, suffix = clean:match("^([%d%.]+)([kmbtq]?)$")
-    if not numStr then
-        numStr = clean:match("([%d%.]+)")
-    end
+    
+    -- 1. Nếu là số thuần hoặc dạng ký hiệu khoa học (e.g. "1.5e18", "50000")
+    local directNum = tonumber(clean)
+    if directNum then return directNum end
+
+    -- 2. Trích xuất phần số và hậu tố (e.g. "5.45qa", "12.8qi", "buy(50.5qi)")
+    local numStr, suffix = clean:match("([%d%.]+)(%a*)")
+    if not numStr then return nil end
     local num = tonumber(numStr)
     if not num then return nil end
 
-    if suffix == "k" then
-        num = num * 1e3
-    elseif suffix == "m" then
-        num = num * 1e6
-    elseif suffix == "b" then
-        num = num * 1e9
-    elseif suffix == "t" then
-        num = num * 1e12
-    elseif suffix == "q" then
-        num = num * 1e15
+    if suffix and suffix ~= "" then
+        if MONEY_SUFFIXES[suffix] then
+            num = num * MONEY_SUFFIXES[suffix]
+        elseif #suffix >= 2 and MONEY_SUFFIXES[suffix:sub(1, 2)] then
+            num = num * MONEY_SUFFIXES[suffix:sub(1, 2)]
+        elseif #suffix >= 1 and MONEY_SUFFIXES[suffix:sub(1, 1)] then
+            num = num * MONEY_SUFFIXES[suffix:sub(1, 1)]
+        end
     end
 
     return num
@@ -495,6 +569,9 @@ function Utils.getPlayerMoney()
         for _, child in ipairs(leaderstats:GetChildren()) do
             if (child:IsA("NumberValue") or child:IsA("IntValue")) and child.Name:lower():find("gem") == nil then
                 return child.Value
+            elseif child:IsA("StringValue") and child.Name:lower():find("gem") == nil then
+                local parsed = Utils.parseMoneyString(child.Value)
+                if parsed then return parsed end
             end
         end
     end
@@ -516,18 +593,37 @@ function Utils.getPlayerMoney()
         if folder then
             for _, name in ipairs({"Cash", "Money", "Coins", "Balance"}) do
                 local v = folder:FindFirstChild(name)
-                if v and v:IsA("ValueBase") and type(v.Value) == "number" then
-                    return v.Value
+                if v and v:IsA("ValueBase") then
+                    if type(v.Value) == "number" then
+                        return v.Value
+                    elseif type(v.Value) == "string" then
+                        local parsed = Utils.parseMoneyString(v.Value)
+                        if parsed then return parsed end
+                    end
                 end
             end
         end
     end
 
-    -- 4. PlayerGui (HUD Labels có ký tự $)
+    -- 4. PlayerGui (Chỉ quét TextLabel là HUD hiển thị số dư, LOẠI TRỪ các nút Button mua bán)
     local pg = lp:FindFirstChild("PlayerGui")
     if pg then
+        -- Ưu tiên 1: TextLabel có tên liên quan đến Cash/Money/Coins/Balance
         for _, label in ipairs(pg:GetDescendants()) do
-            if label:IsA("TextLabel") and label.Visible and label.Text:find("%$") then
+            if label:IsA("TextLabel") and label.Visible and not label:FindFirstAncestorWhichIsA("GuiButton") then
+                local lName = label.Name:lower()
+                if lName:find("cash") or lName:find("money") or lName:find("coin") or lName:find("balance") or lName:find("currency") then
+                    local parsed = Utils.parseMoneyString(label.Text)
+                    if parsed and parsed > 0 then
+                        return parsed
+                    end
+                end
+            end
+        end
+
+        -- Ưu tiên 2: TextLabel bất kỳ có chứa ký tự $ nhưng không nằm trong Button
+        for _, label in ipairs(pg:GetDescendants()) do
+            if label:IsA("TextLabel") and label.Visible and not label:FindFirstAncestorWhichIsA("GuiButton") and label.Text:find("%$") then
                 local parsed = Utils.parseMoneyString(label.Text)
                 if parsed and parsed > 0 then
                     return parsed
@@ -539,23 +635,16 @@ function Utils.getPlayerMoney()
     return nil
 end
 
--- Định dạng số hiển thị rút gọn ($1.5M, $50K, v.v.)
+-- Định dạng số hiển thị rút gọn ($1.5M, $50K, $5.45Qa, $12.8Qi, v.v.)
 function Utils.formatNumber(num)
     if not num then return "0" end
     num = tonumber(num) or 0
-    if num >= 1e15 then
-        return string.format("%.2fQ", num / 1e15)
-    elseif num >= 1e12 then
-        return string.format("%.2fT", num / 1e12)
-    elseif num >= 1e9 then
-        return string.format("%.2fB", num / 1e9)
-    elseif num >= 1e6 then
-        return string.format("%.2fM", num / 1e6)
-    elseif num >= 1e3 then
-        return string.format("%.2fK", num / 1e3)
-    else
-        return tostring(math.floor(num))
+    for _, scale in ipairs(FORMAT_SCALES) do
+        if num >= scale[1] then
+            return string.format("%.2f%s", num / scale[1], scale[2])
+        end
     end
+    return tostring(math.floor(num))
 end
 
 -- Lấy số Gems hiện tại của người chơi
@@ -1549,45 +1638,90 @@ function ShowcaseBuff.init(deps)
 
     -- 1. Tự động Apply Gems
     function ShowcaseBuff.applyGems(silent)
-        -- RÀNG BUỘC: Kiểm tra số Gems hiện có
-        local gems = Utils.getPlayerGems()
-        if gems ~= nil and gems <= 0 then
-            return false, "Không có Gems để Apply (Gems = 0)"
-        end
-
         local success = false
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if remotes then
-            for _, rName in ipairs({"UseLuckySpinRemote", "ApplyGemsRemote", "UseGemsRemote"}) do
-                local rem = remotes:FindFirstChild(rName)
-                if rem and rem:IsA("RemoteEvent") then
-                    pcall(function() rem:FireServer() end)
-                    success = true
-                end
-            end
-        end
 
+        -- A. Tìm nút ApplyGemsButton trong PlayerGui
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        local gemBtn = nil
         if pg then
             local mainFrames = pg:FindFirstChild("MainFrames")
             local topPane = mainFrames and mainFrames:FindFirstChild("MenuFrames") and mainFrames.MenuFrames:FindFirstChild("TopPane")
             if topPane then
                 local row1 = topPane:FindFirstChild("Row1")
-                local gemBtn = (row1 and row1:FindFirstChild("ApplyGemsButton")) or topPane:FindFirstChild("ApplyGemsButton", true)
-                if gemBtn and gemBtn:IsA("GuiButton") and gemBtn.Visible then
-                    pcall(function()
-                        if firesignal then
-                            firesignal(gemBtn.Activated)
-                            firesignal(gemBtn.MouseButton1Click)
-                        else
-                            gemBtn.MouseButton1Click:Fire()
+                gemBtn = (row1 and row1:FindFirstChild("ApplyGemsButton")) or topPane:FindFirstChild("ApplyGemsButton", true)
+            end
+            if not gemBtn then
+                gemBtn = pg:FindFirstChild("ApplyGemsButton", true)
+            end
+            if not gemBtn then
+                for _, desc in ipairs(pg:GetDescendants()) do
+                    if desc:IsA("GuiButton") then
+                        local n = desc.Name:lower()
+                        local t = desc:IsA("TextButton") and desc.Text:lower() or ""
+                        if n:find("applygem") or (n:find("gem") and n:find("apply")) or (t:find("apply") and t:find("gem")) then
+                            gemBtn = desc
+                            break
                         end
-                    end)
+                    end
+                end
+            end
+        end
+
+        -- B. Kích hoạt nút bằng cả firesignal, getconnections & VirtualInputManager
+        if gemBtn then
+            pcall(function()
+                if firesignal then
+                    if gemBtn.Activated then firesignal(gemBtn.Activated) end
+                    if gemBtn.MouseButton1Click then firesignal(gemBtn.MouseButton1Click) end
+                end
+                if getconnections then
+                    if gemBtn.Activated then
+                        for _, c in ipairs(getconnections(gemBtn.Activated)) do c:Fire() end
+                    end
+                    if gemBtn.MouseButton1Click then
+                        for _, c in ipairs(getconnections(gemBtn.MouseButton1Click)) do c:Fire() end
+                    end
+                end
+                if gemBtn.MouseButton1Click then
+                    gemBtn.MouseButton1Click:Fire()
+                end
+            end)
+
+            pcall(function()
+                local vim = VirtualInputManager or game:GetService("VirtualInputManager")
+                if vim and gemBtn.AbsolutePosition and gemBtn.AbsoluteSize and gemBtn.AbsoluteSize.X > 0 then
+                    local pos = gemBtn.AbsolutePosition
+                    local size = gemBtn.AbsoluteSize
+                    local cx = pos.X + size.X / 2
+                    local cy = pos.Y + size.Y / 2
+                    vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                    task.wait(0.05)
+                    vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                end
+            end)
+            success = true
+        end
+
+        -- C. Đồng thời gọi các Remotes liên quan tới Gems nếu có
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if remotes then
+            for _, rName in ipairs({"UseLuckySpinRemote", "ApplyGemsRemote", "UseGemsRemote", "ApplyGemRemote", "ApplyGems"}) do
+                local rem = remotes:FindFirstChild(rName)
+                if rem and rem:IsA("RemoteEvent") then
+                    pcall(function() rem:FireServer() end)
+                    success = true
+                elseif rem and rem:IsA("RemoteFunction") then
+                    pcall(function() rem:InvokeServer() end)
                     success = true
                 end
             end
         end
-        return success
+
+        if success then
+            return true, "Đã thực hiện Apply Gems thành công!"
+        else
+            return false, "Không tìm thấy nút ApplyGemsButton trong giao diện"
+        end
     end
 
     -- 2. Tự động kích hoạt Buff x2.75 Showcase Pedestal
