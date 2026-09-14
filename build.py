@@ -67,17 +67,19 @@ def build():
         with open(mod_path, 'r', encoding='utf-8') as f:
             content = f.read()
             
-        # Strip final `return ModuleName` so modules execute seamlessly in scope
-        var_name = mod_name.replace('.lua', '')
-        # Convert module return to local assignment or keep as is
-        clean_lines = []
-        for line in content.splitlines():
-            if re.match(r'^\s*return\s+', line):
-                continue
-            clean_lines.append(line)
+        lines = content.rstrip().splitlines()
+        while lines and not lines[-1].strip():
+            lines.pop()
+            
+        # Strip ONLY the final `return ModuleName` at the very end of module
+        if lines and re.match(r'^\s*return\s+\w+\s*$', lines[-1]):
+            print(f"Stripping module export from {mod_name}: '{lines[-1].strip()}'")
+            lines.pop()
+        else:
+            print(f"Notice: {mod_name} does not end with 'return <Identifier>'. Last line: '{lines[-1] if lines else 'EMPTY'}'")
             
         parts.append(f"\n--------------------------------------------------------------------------------\n-- MODULE: {mod_name}\n--------------------------------------------------------------------------------\n")
-        parts.append('\n'.join(clean_lines) + '\n')
+        parts.append('\n'.join(lines) + '\n')
         
     # Bootstrap / Initialization execution
     bootstrap = """
@@ -113,8 +115,23 @@ UI.init(deps)
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         f.write(full_code)
         
-    print(f"Build complete! Output: {OUTPUT_FILE}")
+    # Also write to bundle.lua so both files are always identical and up to date
+    bundle_file = os.path.join(os.path.dirname(__file__), 'bundle.lua')
+    with open(bundle_file, 'w', encoding='utf-8') as f:
+        f.write(full_code)
+        
+    print(f"Build complete! Output: {OUTPUT_FILE} and {bundle_file}")
     print(f"Lines: {len(full_code.splitlines())}, Bytes: {len(full_code.encode('utf-8'))}")
+    
+    # Validate with luaparser if available
+    try:
+        from luaparser import ast
+        ast.parse(full_code)
+        print("AST Syntax Check: PASSED (No syntax errors)")
+    except Exception as e:
+        print(f"AST Syntax Check: FAILED: {e}")
+        return False
+        
     return True
 
 if __name__ == '__main__':

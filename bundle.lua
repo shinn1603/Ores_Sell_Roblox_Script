@@ -1,18 +1,38 @@
 --[[
-    ========================================================================
-    SELL ORES HUB - STANDALONE BUNDLE (Single File Edition)
-    Phiên bản: v7.8 Ultimate PRO
-    GitHub: https://github.com/shinn1603/Ores_Sell_Roblox_Script
-    ========================================================================
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║                 SELL ORES HUB - V7.8 ULTIMATE PRO                ║
+    ║   • MODULAR ARCHITECTURE: CHIA TÁCH MODULE RÕ RÀNG & MƯỢT MÀ     ║
+    ║   • FULL AUTO ROLL: TỰ MỞ BẢNG, BẤM START & TỰ ĐÓNG BẢNG 100%    ║
+    ║   • SMART FUSER: NẠP QUẶNG AN TOÀN & BẢO VỆ TUYỆT ĐỐI QUẶNG XỊN  ║
+    ║   • ORE BUFF SHOWCASE: DUY TRÌ TỰ ĐỘNG X2.75 BUFF 24/7           ║
+    ║   • MONEY PIPELINE: ĐÀO MỎ -> NUNG LÒ -> BÁN TIỀN KHÉP KÍN       ║
+    ║   • FLOATING TOGGLE BUTTON TRÒN NỔI MỞ LẠI MENU MỌI LÚC          ║
+    ╚══════════════════════════════════════════════════════════════════╝
 ]]
 
+-- Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
+local CoreGui = game:GetService("CoreGui")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Load Fluent UI Library
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 
-local __modules = {}
 
-__modules["OresData"] = (function()
+--------------------------------------------------------------------------------
+-- MODULE: OresData.lua
+--------------------------------------------------------------------------------
 --[[
     MODULE: OresData.lua
     Mô tả: Danh sách 81 loại quặng chuẩn xác 100% trích xuất từ game Sell Ores
@@ -60,11 +80,10 @@ OresData.OreAliases = {
     ["nichirinswordore"] = "Nichirin Ore",
 }
 
-return OresData
 
-end)()
-
-__modules["State"] = (function()
+--------------------------------------------------------------------------------
+-- MODULE: State.lua
+--------------------------------------------------------------------------------
 --[[
     MODULE: State.lua
     Mô tả: Quản lý biến trạng thái toàn hệ thống & danh sách mặc định
@@ -120,15 +139,14 @@ local defaultFuse = {
 }
 for _, o in ipairs(defaultFuse) do State.AllowedFuseOres[o] = true end
 
-return {
-    State = State,
-    defaultBuy = defaultBuy,
-    defaultFuse = defaultFuse
-}
+State.defaultBuy = defaultBuy
+State.defaultFuse = defaultFuse
 
-end)()
+-- State, defaultBuy, defaultFuse are now all in local scope for bundler
 
-__modules["Utils"] = (function()
+--------------------------------------------------------------------------------
+-- MODULE: Utils.lua
+--------------------------------------------------------------------------------
 --[[
     MODULE: Utils.lua
     Mô tả: Các hàm tiện ích cốt lõi (Định vị Base, Teleport, Kích hoạt Prompt, Trang bị Tool)
@@ -364,400 +382,68 @@ function Utils.equipToolFromWhitelist(whitelistMap)
     return nil
 end
 
-return Utils
+function Utils.hasToolInWhitelist(whitelistMap)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChildOfClass("Tool") then
+        local t = char:FindFirstChildOfClass("Tool")
+        if Utils.isOreMatchingWhitelist(t.Name, whitelistMap) then
+            return true
+        end
+    end
 
-end)()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") and Utils.isOreMatchingWhitelist(item.Name, whitelistMap) then
+                return true
+            end
+        end
+    end
 
-__modules["ShowcaseBuff"] = (function()
---[[
-    MODULE: ShowcaseBuff.lua
-    Mô tả: Tự động kích hoạt Buff x2.75 từ Showcase Pedestal & Tự động Apply Gems
-]]
+    return false
+end
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local LocalPlayer = Players.LocalPlayer
+function Utils.unequipAllTools()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function() hum:UnequipTools() end)
+    end
+end
 
-local ShowcaseBuff = {}
-
-function ShowcaseBuff.init(deps)
-    local Utils = deps.Utils
-
-    -- 1. Tự động Apply Gems
-    function ShowcaseBuff.applyGems(silent)
-        local success = false
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if remotes then
-            for _, rName in ipairs({"UseLuckySpinRemote", "ApplyGemsRemote", "UseGemsRemote"}) do
-                local rem = remotes:FindFirstChild(rName)
-                if rem and rem:IsA("RemoteEvent") then
-                    pcall(function() rem:FireServer() end)
-                    success = true
+function Utils.clearBlurAndDimmer()
+    pcall(function()
+        local lighting = game:GetService("Lighting")
+        for _, obj in ipairs(lighting:GetChildren()) do
+            if obj:IsA("BlurEffect") or obj:IsA("ColorCorrectionEffect") then
+                obj.Enabled = false
+            end
+        end
+        local cam = Workspace.CurrentCamera
+        if cam then
+            for _, obj in ipairs(cam:GetChildren()) do
+                if obj:IsA("BlurEffect") or obj:IsA("ColorCorrectionEffect") then
+                    obj.Enabled = false
                 end
             end
         end
-
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            local mainFrames = pg:FindFirstChild("MainFrames")
-            local topPane = mainFrames and mainFrames:FindFirstChild("MenuFrames") and mainFrames.MenuFrames:FindFirstChild("TopPane")
-            if topPane then
-                local row1 = topPane:FindFirstChild("Row1")
-                local gemBtn = (row1 and row1:FindFirstChild("ApplyGemsButton")) or topPane:FindFirstChild("ApplyGemsButton", true)
-                if gemBtn and gemBtn:IsA("GuiButton") and gemBtn.Visible then
-                    pcall(function()
-                        if firesignal then
-                            firesignal(gemBtn.Activated)
-                            firesignal(gemBtn.MouseButton1Click)
-                        else
-                            gemBtn.MouseButton1Click:Fire()
-                        end
-                    end)
-                    success = true
+        local mf = pg and pg:FindFirstChild("MainFrames")
+        if mf then
+            for _, child in ipairs(mf:GetChildren()) do
+                local cName = child.Name:lower()
+                if (cName:find("dim") or cName:find("blur") or cName:find("overlay") or cName:find("shade") or cName:find("dark")) and child:IsA("GuiObject") then
+                    child.Visible = false
                 end
             end
         end
-        return success
-    end
-
-    -- 2. Tự động kích hoạt Buff x2.75 Showcase Pedestal
-    function ShowcaseBuff.activateBuff(forceReset)
-        local base = Utils.getMyBase()
-        local myBaseName = base and base.Name or "Base4"
-
-        local rem = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("ShowcasePedestalAction")
-        if not rem then return false, "Không tìm thấy ShowcasePedestalAction Remote" end
-
-        local results = {}
-        for i = 1, 2 do
-            local stateRes = nil
-            pcall(function()
-                stateRes = rem:InvokeServer(myBaseName, i, "GetState")
-            end)
-
-            local timeLeft = 0
-            if stateRes and stateRes.state and stateRes.state.BuffExpiresAt then
-                timeLeft = math.max(0, stateRes.state.BuffExpiresAt - os.time())
-            end
-
-            if forceReset then
-                pcall(function() rem:InvokeServer(myBaseName, i, "Unequip") end)
-                task.wait(0.2)
-                timeLeft = 0
-            end
-
-            if timeLeft <= 10 then
-                pcall(function()
-                    local res = rem:InvokeServer(myBaseName, i, "ActivateBuff")
-                    if res and res.success then
-                        local mult = (res.state and res.state.Multiplier) or "2.75"
-                        table.insert(results, string.format("Bục %d: Đã kích hoạt Buff x%s!", i, tostring(mult)))
-                    else
-                        table.insert(results, string.format("Bục %d: Hãy đặt quặng lên bục trước", i))
-                    end
-                end)
-            else
-                local mins = math.floor(timeLeft / 60)
-                local secs = timeLeft % 60
-                table.insert(results, string.format("Bục %d: Buff đang chạy (%dp %ds)", i, mins, secs))
-            end
-        end
-
-        -- Nếu có bục đang trống (Place Ore) -> Cầm quặng đặt lên bục
-        local bases = Workspace:FindFirstChild("Bases")
-        local bObj = bases and (bases:FindFirstChild(myBaseName) or bases:FindFirstChild("Base4"))
-        if bObj then
-            for _, name in ipairs({"OreShowcasePedestal1", "OreShowcasePedestal2"}) do
-                local ped = bObj:FindFirstChild(name)
-                if ped then
-                    for _, p in ipairs(ped:GetDescendants()) do
-                        if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Ore" then
-                            local tool = Utils.equipToolFromWhitelist(nil)
-                            if tool then
-                                if p.Parent and p.Parent:IsA("BasePart") then Utils.teleportTo(p.Parent.CFrame) end
-                                task.wait(0.1)
-                                Utils.firePrompt(p)
-                                task.wait(0.2)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        return true, table.concat(results, " | ")
-    end
+    end)
 end
 
-return ShowcaseBuff
 
-end)()
-
-__modules["MoneyPipeline"] = (function()
---[[
-    MODULE: MoneyPipeline.lua
-    Mô tả: Chu trình kiếm tiền tự động (CrateMaker -> Furnace -> SellerTable)
-]]
-
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-local MoneyPipeline = {}
-
-function MoneyPipeline.init(deps)
-    local Utils = deps.Utils
-    local State = deps.State
-
-    function MoneyPipeline.run()
-        local base = Utils.getMyBase()
-        if not base then return false, "Không tìm thấy căn cứ" end
-
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return false, "Chưa tải nhân vật" end
-
-        local cm = base:FindFirstChild("CrateMaker")
-        local furnace = base:FindFirstChild("Furnace")
-        local st = base:FindFirstChild("SellerTable")
-
-        local stepDelay = math.clamp(State.MoneyStepDelay or 0.4, 0.25, 1.0)
-        local prevCF = char.HumanoidRootPart.CFrame
-
-        -- BƯỚC 0: KIỂM TRA XEM LÒ NUNG ĐÃ CÓ SẴN THÙNG KIM LOẠI NUNG XONG CHƯA
-        local readyMetalPrompt = nil
-        if furnace and furnace:FindFirstChild("MetalCratePlacementPart") then
-            for _, p in ipairs(furnace.MetalCratePlacementPart:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.ActionText == "Pick up" and p.Enabled then
-                    readyMetalPrompt = p
-                    break
-                end
-            end
-        end
-
-        if readyMetalPrompt then
-            Utils.teleportTo(furnace.MetalCratePlacementPart.CFrame + Vector3.new(0, 1.5, 0))
-            task.wait(stepDelay)
-            Utils.firePrompt(readyMetalPrompt)
-            task.wait(stepDelay + 0.1)
-        else
-            -- BƯỚC 1: Thu hoạch thùng quặng thô từ CrateMaker
-            local pickOrePrompt = nil
-            if cm and cm:FindFirstChild("CrateSpawnPoint") then
-                for _, p in ipairs(cm.CrateSpawnPoint:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and p.ActionText:find("Pick up") and p.Enabled then
-                        pickOrePrompt = p
-                        break
-                    end
-                end
-            end
-
-            if not pickOrePrompt then
-                return false, "Mỏ đang đào quặng, chưa có thùng mới"
-            end
-
-            Utils.teleportTo(cm.CrateSpawnPoint.CFrame + Vector3.new(0, 1.5, 0))
-            task.wait(stepDelay)
-            Utils.firePrompt(pickOrePrompt)
-            task.wait(stepDelay + 0.15)
-
-            -- BƯỚC 2: Bỏ vào lò nung Furnace ('Place ORES')
-            local placePrompt = nil
-            if furnace and furnace:FindFirstChild("PlaceCratesPromptPart") then
-                for _, p in ipairs(furnace.PlaceCratesPromptPart:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and p.ActionText:find("Place") and p.Enabled then
-                        placePrompt = p
-                        break
-                    end
-                end
-            end
-
-            if placePrompt then
-                Utils.teleportTo(furnace.PlaceCratesPromptPart.CFrame + Vector3.new(0, 1.5, 0))
-                task.wait(stepDelay)
-
-                local crateTool = char:FindFirstChildOfClass("Tool") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChildOfClass("Tool"))
-                if crateTool then Utils.equipToolToHand(crateTool) end
-                task.wait(0.12)
-
-                Utils.firePrompt(placePrompt)
-                task.wait(stepDelay + 0.2)
-            end
-
-            -- BƯỚC 3: Chờ lò nung luyện quặng xong
-            local metalPrompt = nil
-            local waitSmeltStart = tick()
-            while tick() - waitSmeltStart < 6.5 do
-                if furnace and furnace:FindFirstChild("MetalCratePlacementPart") then
-                    for _, p in ipairs(furnace.MetalCratePlacementPart:GetDescendants()) do
-                        if p:IsA("ProximityPrompt") and p.ActionText == "Pick up" and p.Enabled then
-                            metalPrompt = p
-                            break
-                        end
-                    end
-                end
-                if metalPrompt then break end
-                task.wait(0.3)
-            end
-
-            if metalPrompt then
-                Utils.teleportTo(furnace.MetalCratePlacementPart.CFrame + Vector3.new(0, 1.5, 0))
-                task.wait(stepDelay)
-                Utils.firePrompt(metalPrompt)
-                task.wait(stepDelay + 0.15)
-            else
-                return false, "Lò nung đang nung, chưa xong thùng thành phẩm"
-            end
-        end
-
-        -- BƯỚC 4: Cầm chắc thùng trên tay và đem bán tại SellerTable
-        local metalTool = char:FindFirstChildOfClass("Tool") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChildOfClass("Tool"))
-        if metalTool then Utils.equipToolToHand(metalTool) end
-        task.wait(0.15)
-
-        local sellPrompt = nil
-        if st then
-            for _, p in ipairs(st:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.Enabled then
-                    local act = p.ActionText:lower()
-                    if act:find("sell") or act:find("bán") or act == "" then
-                        sellPrompt = p
-                        break
-                    end
-                end
-            end
-        end
-
-        if sellPrompt and sellPrompt.Parent and sellPrompt.Parent:IsA("BasePart") then
-            Utils.teleportTo(sellPrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
-            task.wait(stepDelay)
-            if metalTool and metalTool.Parent ~= char then Utils.equipToolToHand(metalTool) end
-            task.wait(0.1)
-            Utils.firePrompt(sellPrompt)
-            task.wait(stepDelay)
-        end
-
-        -- Quay lại vị trí đứng cũ
-        Utils.teleportTo(prevCF)
-        return true, "Đã hoàn thành một chu kỳ bán quặng kiếm tiền!"
-    end
-end
-
-return MoneyPipeline
-
-end)()
-
-__modules["SmartFuser"] = (function()
---[[
-    MODULE: SmartFuser.lua
-    Mô tả: Tự động nạp quặng vào 5 node của Fuser và nhận thành phẩm Mega Ore (Bảo vệ quặng xịn 100%)
-]]
-
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-local SmartFuser = {}
-
-function SmartFuser.init(deps)
-    local Utils = deps.Utils
-    local State = deps.State
-
-    function SmartFuser.run()
-        local base = Utils.getMyBase()
-        if not base or not base:FindFirstChild("Fuser") then return false, "Không tìm thấy Fuser trong căn cứ" end
-        local fuser = base.Fuser
-        local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return false, "Chưa tải nhân vật" end
-
-        -- Lưu vị trí đứng ban đầu để quay về
-        local originCF = char.HumanoidRootPart.CFrame
-
-        -- 1. Nếu có prompt 'Claim Fused Ore' -> Bay tới nhận ngay!
-        for _, prompt in ipairs(fuser:GetDescendants()) do
-            if prompt:IsA("ProximityPrompt") and prompt.Enabled and prompt.ActionText:lower():find("claim") then
-                if prompt.Parent and prompt.Parent:IsA("BasePart") then
-                    Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 0.5, 0))
-                    task.wait(0.25)
-                end
-                Utils.firePrompt(prompt)
-                task.wait(0.35)
-                if originCF then Utils.teleportTo(originCF) end
-                return true, "Đã nhận thành phẩm Mega Ore!"
-            end
-        end
-
-        -- 2. Kiểm tra xem người chơi có quặng nào trong danh sách cho phép nung ở túi đồ không
-        local hasAnyAllowedOre = Utils.equipToolFromWhitelist(State.AllowedFuseOres)
-        if not hasAnyAllowedOre then
-            return false, "Không có quặng nào trong danh sách cho phép nung ở túi đồ"
-        end
-
-        -- 3. Tìm tất cả các node đang TRỐNG (Place Ore / Place / Add / Fuse)
-        local emptyNodes = {}
-        for _, prompt in ipairs(fuser:GetDescendants()) do
-            if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                local act = (prompt.ActionText or ""):lower()
-                if not act:find("claim") and not act:find("remove") then
-                    if act:find("place") or act:find("deposit") or act:find("insert") or act:find("add") or act:find("fuse") or act == "" then
-                        table.insert(emptyNodes, prompt)
-                    end
-                end
-            end
-        end
-
-        if #emptyNodes == 0 then
-            return true, "Fuser đã đầy hoặc đang nung quặng"
-        end
-
-        -- 4. Nạp quặng vào từng node trống (CẦM QUẶNG TRÊN TAY RỒI MỚI BẤM PLACE)
-        local placedCount = 0
-        for _, prompt in ipairs(emptyNodes) do
-            local tool = Utils.equipToolFromWhitelist(State.AllowedFuseOres)
-            if not tool then
-                -- Không còn quặng nào trong danh sách cho phép ở túi đồ -> Dừng, bảo vệ quặng xịn!
-                break
-            end
-
-            local okEquip = Utils.equipToolToHand(tool)
-            if not okEquip then break end
-
-            -- Đứng sát trước mặt node trên sàn
-            if prompt.Parent and prompt.Parent:IsA("BasePart") then
-                Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 0.5, 0))
-                task.wait(0.3)
-            end
-
-            if tool.Parent ~= char then
-                Utils.equipToolToHand(tool)
-                task.wait(0.15)
-            end
-
-            Utils.firePrompt(prompt)
-            task.wait(0.35)
-
-            -- Kiểm tra nếu tool vẫn còn trên tay (chưa ăn prompt) -> thử kích hoạt lại 1 lần nữa
-            if tool.Parent == char and prompt.Enabled then
-                Utils.firePrompt(prompt)
-                task.wait(0.25)
-            end
-
-            placedCount = placedCount + 1
-        end
-
-        -- QUAY LẠI VỊ TRÍ ĐỨNG BAN ĐẦU (Không đứng ngơ ngác ở Fuser!)
-        if originCF then
-            Utils.teleportTo(originCF)
-        end
-
-        return true, string.format("Đã nạp thành công %d quặng cho Fuser!", placedCount)
-    end
-end
-
-return SmartFuser
-
-end)()
-
-__modules["AutoRoll"] = (function()
+--------------------------------------------------------------------------------
+-- MODULE: AutoRoll.lua
+--------------------------------------------------------------------------------
 --[[
     MODULE: AutoRoll.lua
     Mô tả: Hệ thống Auto Roll (Tự mở bảng, bấm START, đóng bảng) & Soi quét mua quặng 6 bục
@@ -834,8 +520,29 @@ function AutoRoll.init(deps)
                 if target then
                     pcall(function()
                         if firesignal then
-                            if target.Activated then firesignal(target.Activated) end
-                            if target.MouseButton1Click then firesignal(target.MouseButton1Click) end
+                            if target:IsA("GuiButton") then
+                                if target.Activated then firesignal(target.Activated) end
+                                if target.MouseButton1Click then firesignal(target.MouseButton1Click) end
+                            end
+                            for _, btn in ipairs(target:GetDescendants()) do
+                                if btn:IsA("GuiButton") then
+                                    if btn.Activated then firesignal(btn.Activated) end
+                                    if btn.MouseButton1Click then firesignal(btn.MouseButton1Click) end
+                                end
+                            end
+                        end
+                    end)
+
+                    pcall(function()
+                        local vim = VirtualInputManager or game:GetService("VirtualInputManager")
+                        if vim and target.AbsolutePosition and target.AbsoluteSize and target.AbsoluteSize.X > 0 then
+                            local pos = target.AbsolutePosition
+                            local size = target.AbsoluteSize
+                            local cx = pos.X + size.X / 2
+                            local cy = pos.Y + size.Y / 2
+                            vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                            task.wait(0.06)
+                            vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
                         end
                     end)
                     return true
@@ -855,7 +562,7 @@ function AutoRoll.init(deps)
         local panel = nil
         while tick() - t0 <= maxWait do
             local mainFrames = pg:FindFirstChild("MainFrames")
-            panel = mainFrames and mainFrames:FindFirstChild("AutoRollerPanel", true)
+            panel = mainFrames and (mainFrames:FindFirstChild("AutoRollerPanel", true) or (mainFrames:FindFirstChild("Frames") and mainFrames.Frames:FindFirstChild("AutoRollerPanel")))
             if panel and panel.Visible then
                 break
             end
@@ -864,17 +571,17 @@ function AutoRoll.init(deps)
 
         if not panel or not panel.Visible then return false end
 
-        -- A. Tìm nút START trong panel
+        -- A. Tìm nút START trong panel (TextLabel hoặc TextButton hoặc nút màu xanh lá)
         local startBtn = nil
         for _, desc in ipairs(panel:GetDescendants()) do
-            if desc:IsA("TextLabel") and desc.Text:upper():find("START") and not desc.Text:upper():find("RESTART") then
-                startBtn = desc:FindFirstAncestorWhichIsA("GuiButton")
-                if not startBtn then
-                    local frame = desc:FindFirstAncestorWhichIsA("Frame") or desc.Parent
-                    if frame then
-                        startBtn = frame:FindFirstChildWhichIsA("GuiButton", true) or frame
-                    end
-                end
+            local txt = ""
+            if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                txt = desc.Text:upper()
+            end
+            if txt:find("START") and not txt:find("RESTART") and not txt:find("STOP") then
+                startBtn = desc:FindFirstAncestorWhichIsA("GuiButton") 
+                        or (desc:IsA("GuiButton") and desc)
+                        or desc.Parent
                 if startBtn then break end
             end
         end
@@ -889,7 +596,7 @@ function AutoRoll.init(deps)
                         break
                     end
                     local col = desc.BackgroundColor3
-                    if col.G > 0.5 and col.R < 0.4 and col.B < 0.4 then
+                    if col and col.G > 0.5 and col.R < 0.4 and col.B < 0.4 then
                         startBtn = desc
                         break
                     end
@@ -988,18 +695,8 @@ function AutoRoll.init(deps)
 
         task.wait(0.4)
 
-        -- C. Dọn sạch lớp màn hình mờ xám (Dimmer / Background Overlay) của game
-        pcall(function()
-            local mf = pg:FindFirstChild("MainFrames")
-            if mf then
-                for _, child in ipairs(mf:GetChildren()) do
-                    local cName = child.Name:lower()
-                    if (cName:find("dim") or cName:find("blur") or cName:find("overlay") or cName:find("shade") or cName:find("dark") or cName:find("background")) and child:IsA("GuiObject") then
-                        child.Visible = false
-                    end
-                end
-            end
-        end)
+        -- C. Dọn sạch lớp màn hình mờ xám (Dimmer / Blur Effect / Overlay) của game
+        Utils.clearBlurAndDimmer()
 
         if panel.Visible then
             pcall(function() panel.Visible = false end)
@@ -1034,15 +731,11 @@ function AutoRoll.init(deps)
             end
         end
 
-        -- Bước 2: Teleport đến đứng sát trước cần gạt và quay mặt vào cần
+        -- Bước 2: Teleport đến đứng an toàn ngay trên sàn cạnh cần gạt (1.5 studs trên part, KHÔNG dùng LookVector đâm xuyên tường hay kẹt mesh!)
         if leverCF and hrp then
-            local standCF = leverCF + (leverCF.LookVector * 2.5) + Vector3.new(0, 0.8, 0)
+            local standCF = leverCF + Vector3.new(0, 1.5, 0)
             Utils.teleportTo(standCF)
-            task.wait(0.15)
-            pcall(function()
-                hrp.CFrame = CFrame.new(hrp.Position, leverCF.Position)
-            end)
-            task.wait(0.1)
+            task.wait(0.2)
         end
 
         -- Bước 3: Kích hoạt Cần Gạt vật lý qua ProximityPrompt
@@ -1051,14 +744,20 @@ function AutoRoll.init(deps)
             task.wait(0.2)
         end
 
-        -- Bước 4: Kích hoạt nút Prompt trên màn hình nếu có
+        -- Bước 4: Kích hoạt nút Prompt trên màn hình nếu có (ExpressivePromptsGui)
         AutoRoll.clickExpressivePromptForLever()
         task.wait(0.2)
 
         -- Bước 5: Chờ bảng AutoRollerPanel bung ra -> bấm START -> đóng bảng
         local panelHandled = AutoRoll.handleAutoRollerPanel(2.5)
 
-        -- Bước 6: Trả nhân vật về vị trí ban đầu
+        -- Bước 6: Dọn sạch mọi hiệu ứng xám/mờ màn hình còn sót lại
+        Utils.clearBlurAndDimmer()
+
+        -- Bước 7: Cất hết tool/vật phẩm vào túi, không cầm trên tay
+        Utils.unequipAllTools()
+
+        -- Bước 8: Trả nhân vật về vị trí ban đầu
         if prevCF then
             Utils.teleportTo(prevCF)
         end
@@ -1210,11 +909,411 @@ function AutoRoll.init(deps)
     end
 end
 
-return AutoRoll
 
-end)()
+--------------------------------------------------------------------------------
+-- MODULE: SmartFuser.lua
+--------------------------------------------------------------------------------
+--[[
+    MODULE: SmartFuser.lua
+    Mô tả: Tự động nạp quặng vào 5 node của Fuser và nhận thành phẩm Mega Ore (Bảo vệ quặng xịn 100%)
+]]
 
-__modules["ConfigManager"] = (function()
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local SmartFuser = {}
+
+function SmartFuser.init(deps)
+    local Utils = deps.Utils
+    local State = deps.State
+
+    function SmartFuser.run()
+        local base = Utils.getMyBase()
+        if not base or not base:FindFirstChild("Fuser") then return false, "Không tìm thấy Fuser trong căn cứ" end
+        local fuser = base.Fuser
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return false, "Chưa tải nhân vật" end
+
+        -- Lưu vị trí đứng ban đầu để quay về
+        local originCF = char.HumanoidRootPart.CFrame
+
+        -- 1. Nếu có prompt 'Claim Fused Ore' -> Bay tới nhận ngay!
+        for _, prompt in ipairs(fuser:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") and prompt.Enabled and prompt.ActionText:lower():find("claim") then
+                if prompt.Parent and prompt.Parent:IsA("BasePart") then
+                    Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 2.0, 0))
+                    task.wait(0.25)
+                end
+                Utils.firePrompt(prompt)
+                task.wait(0.35)
+                if originCF then Utils.teleportTo(originCF) end
+                return true, "Đã nhận thành phẩm Mega Ore!"
+            end
+        end
+
+        -- 2. Kiểm tra xem người chơi có quặng nào trong danh sách cho phép nung ở túi đồ không
+        local hasAnyAllowedOre = Utils.hasToolInWhitelist(State.AllowedFuseOres)
+        if not hasAnyAllowedOre then
+            return false, "Không có quặng nào trong danh sách cho phép nung ở túi đồ"
+        end
+
+        -- 3. Tìm tất cả các node đang TRỐNG (Place Ore / Place / Add / Fuse)
+        local emptyNodes = {}
+        for _, prompt in ipairs(fuser:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                local act = (prompt.ActionText or ""):lower()
+                if not act:find("claim") and not act:find("remove") then
+                    if act:find("place") or act:find("deposit") or act:find("insert") or act:find("add") or act:find("fuse") or act == "" then
+                        table.insert(emptyNodes, prompt)
+                    end
+                end
+            end
+        end
+
+        if #emptyNodes == 0 then
+            return true, "Fuser đã đầy hoặc đang nung quặng"
+        end
+
+        -- 4. Nạp quặng vào từng node trống (TELEPORT TRƯỚC → CẦM QUẶNG → BẤM PLACE)
+        local placedCount = 0
+        for _, prompt in ipairs(emptyNodes) do
+            -- Bước A: Teleport đến node TRƯỚC (chưa cầm gì cả!)
+            if prompt.Parent and prompt.Parent:IsA("BasePart") then
+                Utils.unequipAllTools()
+                task.wait(0.1)
+                Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 2.0, 0))
+                task.wait(0.35)
+            end
+
+            -- Bước B: SAU KHI ĐÃ ĐỨNG YÊN, mới cầm quặng lên tay
+            local tool = Utils.equipToolFromWhitelist(State.AllowedFuseOres)
+            if not tool then
+                -- Không còn quặng nào trong danh sách cho phép ở túi đồ -> Dừng, bảo vệ quặng xịn!
+                break
+            end
+
+            local okEquip = Utils.equipToolToHand(tool)
+            if not okEquip then break end
+            task.wait(0.25) -- Đợi game server xác nhận tool đã trên tay
+
+            -- Bước C: Kích hoạt prompt để đặt quặng vào Fuser
+            Utils.firePrompt(prompt)
+            task.wait(0.4)
+
+            -- Bước D: Nếu tool vẫn còn trên tay (game chưa nhận) -> thử lại 2 lần nữa
+            for retry = 1, 2 do
+                if tool.Parent == char and prompt.Enabled then
+                    -- Equip lại tool (đề phòng bị drop)
+                    Utils.equipToolToHand(tool)
+                    task.wait(0.2)
+                    Utils.firePrompt(prompt)
+                    task.wait(0.35)
+                else
+                    break
+                end
+            end
+
+            placedCount = placedCount + 1
+        end
+
+        -- Cất toàn bộ tool vào túi, không cầm trên tay
+        Utils.unequipAllTools()
+
+        -- QUAY LẠI VỊ TRÍ ĐỨNG BAN ĐẦU (Không đứng ngơ ngác ở Fuser!)
+        if originCF then
+            Utils.teleportTo(originCF)
+        end
+
+        return true, string.format("Đã nạp thành công %d quặng cho Fuser!", placedCount)
+    end
+end
+
+
+--------------------------------------------------------------------------------
+-- MODULE: MoneyPipeline.lua
+--------------------------------------------------------------------------------
+--[[
+    MODULE: MoneyPipeline.lua
+    Mô tả: Chu trình kiếm tiền tự động (CrateMaker -> Furnace -> SellerTable)
+]]
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local MoneyPipeline = {}
+
+function MoneyPipeline.init(deps)
+    local Utils = deps.Utils
+    local State = deps.State
+
+    local function findPipelineTool()
+        local char = LocalPlayer.Character
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        local containers = {char, backpack}
+        for _, container in ipairs(containers) do
+            if container then
+                for _, item in ipairs(container:GetChildren()) do
+                    if item:IsA("Tool") then
+                        local n = item.Name:lower()
+                        if not n:find("pickaxe") and not n:find("sword") and not n:find("weapon") and not n:find("gun") and not n:find("rod") and not n:find("potion") then
+                            if n:find("crate") or n:find("metal") or n:find("bar") or n:find("ore") or n:find("box") then
+                                return item
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    function MoneyPipeline.run()
+        local base = Utils.getMyBase()
+        if not base then return false, "Không tìm thấy căn cứ" end
+
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return false, "Chưa tải nhân vật" end
+
+        local cm = base:FindFirstChild("CrateMaker")
+        local furnace = base:FindFirstChild("Furnace")
+        local st = base:FindFirstChild("SellerTable")
+
+        local stepDelay = math.clamp(State.MoneyStepDelay or 0.4, 0.25, 1.0)
+        local prevCF = char.HumanoidRootPart.CFrame
+
+        -- BƯỚC 0: KIỂM TRA XEM LÒ NUNG ĐÃ CÓ SẴN THÙNG KIM LOẠI NUNG XONG CHƯA
+        local readyMetalPrompt = nil
+        if furnace and furnace:FindFirstChild("MetalCratePlacementPart") then
+            for _, p in ipairs(furnace.MetalCratePlacementPart:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.ActionText == "Pick up" and p.Enabled then
+                    readyMetalPrompt = p
+                    break
+                end
+            end
+        end
+
+        if readyMetalPrompt then
+            Utils.teleportTo(furnace.MetalCratePlacementPart.CFrame + Vector3.new(0, 1.5, 0))
+            task.wait(stepDelay)
+            Utils.firePrompt(readyMetalPrompt)
+            task.wait(stepDelay + 0.1)
+        else
+            -- BƯỚC 1: Thu hoạch thùng quặng thô từ CrateMaker
+            local pickOrePrompt = nil
+            if cm and cm:FindFirstChild("CrateSpawnPoint") then
+                for _, p in ipairs(cm.CrateSpawnPoint:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") and p.ActionText:find("Pick up") and p.Enabled then
+                        pickOrePrompt = p
+                        break
+                    end
+                end
+            end
+
+            if not pickOrePrompt then
+                return false, "Mỏ đang đào quặng, chưa có thùng mới"
+            end
+
+            Utils.teleportTo(cm.CrateSpawnPoint.CFrame + Vector3.new(0, 1.5, 0))
+            task.wait(stepDelay)
+            Utils.firePrompt(pickOrePrompt)
+            task.wait(stepDelay + 0.15)
+
+            -- BƯỚC 2: Bỏ vào lò nung Furnace ('Place ORES')
+            local placePrompt = nil
+            if furnace and furnace:FindFirstChild("PlaceCratesPromptPart") then
+                for _, p in ipairs(furnace.PlaceCratesPromptPart:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") and p.ActionText:find("Place") and p.Enabled then
+                        placePrompt = p
+                        break
+                    end
+                end
+            end
+
+            if placePrompt then
+                Utils.teleportTo(furnace.PlaceCratesPromptPart.CFrame + Vector3.new(0, 1.5, 0))
+                task.wait(stepDelay)
+
+                local crateTool = findPipelineTool()
+                if crateTool then Utils.equipToolToHand(crateTool) end
+                task.wait(0.12)
+
+                Utils.firePrompt(placePrompt)
+                task.wait(stepDelay + 0.2)
+            end
+
+            -- BƯỚC 3: Chờ lò nung luyện quặng xong
+            local metalPrompt = nil
+            local waitSmeltStart = tick()
+            while tick() - waitSmeltStart < 6.5 do
+                if furnace and furnace:FindFirstChild("MetalCratePlacementPart") then
+                    for _, p in ipairs(furnace.MetalCratePlacementPart:GetDescendants()) do
+                        if p:IsA("ProximityPrompt") and p.ActionText == "Pick up" and p.Enabled then
+                            metalPrompt = p
+                            break
+                        end
+                    end
+                end
+                if metalPrompt then break end
+                task.wait(0.3)
+            end
+
+            if metalPrompt then
+                Utils.teleportTo(furnace.MetalCratePlacementPart.CFrame + Vector3.new(0, 1.5, 0))
+                task.wait(stepDelay)
+                Utils.firePrompt(metalPrompt)
+                task.wait(stepDelay + 0.15)
+            else
+                Utils.unequipAllTools()
+                if prevCF then Utils.teleportTo(prevCF) end
+                return false, "Lò nung đang nung, chưa xong thùng thành phẩm"
+            end
+        end
+
+        -- BƯỚC 4: Cầm chắc thùng trên tay và đem bán tại SellerTable
+        local metalTool = findPipelineTool()
+        if metalTool then Utils.equipToolToHand(metalTool) end
+        task.wait(0.15)
+
+        local sellPrompt = nil
+        if st then
+            for _, p in ipairs(st:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.Enabled then
+                    local act = p.ActionText:lower()
+                    if act:find("sell") or act:find("bán") or act == "" then
+                        sellPrompt = p
+                        break
+                    end
+                end
+            end
+        end
+
+        if sellPrompt and sellPrompt.Parent and sellPrompt.Parent:IsA("BasePart") then
+            Utils.teleportTo(sellPrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
+            task.wait(stepDelay)
+            if metalTool and metalTool.Parent ~= char then Utils.equipToolToHand(metalTool) end
+            task.wait(0.1)
+            Utils.firePrompt(sellPrompt)
+            task.wait(stepDelay)
+        end
+
+        -- Cất tool vào túi sau khi bán xong
+        Utils.unequipAllTools()
+
+        -- Quay lại vị trí đứng cũ
+        Utils.teleportTo(prevCF)
+        return true, "Đã hoàn thành một chu kỳ bán quặng kiếm tiền!"
+    end
+end
+
+
+--------------------------------------------------------------------------------
+-- MODULE: ShowcaseBuff.lua
+--------------------------------------------------------------------------------
+--[[
+    MODULE: ShowcaseBuff.lua
+    Mô tả: Tự động kích hoạt Buff x2.75 từ Showcase Pedestal & Tự động Apply Gems
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+
+local ShowcaseBuff = {}
+
+function ShowcaseBuff.init(deps)
+    local Utils = deps.Utils
+
+    -- 1. Tự động Apply Gems
+    function ShowcaseBuff.applyGems(silent)
+        local success = false
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if remotes then
+            for _, rName in ipairs({"UseLuckySpinRemote", "ApplyGemsRemote", "UseGemsRemote"}) do
+                local rem = remotes:FindFirstChild(rName)
+                if rem and rem:IsA("RemoteEvent") then
+                    pcall(function() rem:FireServer() end)
+                    success = true
+                end
+            end
+        end
+
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            local mainFrames = pg:FindFirstChild("MainFrames")
+            local topPane = mainFrames and mainFrames:FindFirstChild("MenuFrames") and mainFrames.MenuFrames:FindFirstChild("TopPane")
+            if topPane then
+                local row1 = topPane:FindFirstChild("Row1")
+                local gemBtn = (row1 and row1:FindFirstChild("ApplyGemsButton")) or topPane:FindFirstChild("ApplyGemsButton", true)
+                if gemBtn and gemBtn:IsA("GuiButton") and gemBtn.Visible then
+                    pcall(function()
+                        if firesignal then
+                            firesignal(gemBtn.Activated)
+                            firesignal(gemBtn.MouseButton1Click)
+                        else
+                            gemBtn.MouseButton1Click:Fire()
+                        end
+                    end)
+                    success = true
+                end
+            end
+        end
+        return success
+    end
+
+    -- 2. Tự động kích hoạt Buff x2.75 Showcase Pedestal
+    function ShowcaseBuff.activateBuff(forceReset)
+        local base = Utils.getMyBase()
+        local myBaseName = base and base.Name or "Base4"
+
+        local rem = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("ShowcasePedestalAction")
+        if not rem then return false, "Không tìm thấy ShowcasePedestalAction Remote" end
+
+        local results = {}
+        for i = 1, 2 do
+            local stateRes = nil
+            pcall(function()
+                stateRes = rem:InvokeServer(myBaseName, i, "GetState")
+            end)
+
+            local timeLeft = 0
+            if stateRes and stateRes.state and stateRes.state.BuffExpiresAt then
+                timeLeft = math.max(0, stateRes.state.BuffExpiresAt - os.time())
+            end
+
+            if forceReset then
+                pcall(function() rem:InvokeServer(myBaseName, i, "Unequip") end)
+                task.wait(0.2)
+                timeLeft = 0
+            end
+
+            if timeLeft <= 10 then
+                pcall(function()
+                    local res = rem:InvokeServer(myBaseName, i, "ActivateBuff")
+                    if res and res.success then
+                        local mult = (res.state and res.state.Multiplier) or "2.75"
+                        table.insert(results, string.format("Bục %d: Đã kích hoạt Buff x%s!", i, tostring(mult)))
+                    else
+                        table.insert(results, string.format("Bục %d: Hãy đặt quặng lên bục trước", i))
+                    end
+                end)
+            else
+                local mins = math.floor(timeLeft / 60)
+                local secs = timeLeft % 60
+                table.insert(results, string.format("Bục %d: Buff đang chạy (%dp %ds)", i, mins, secs))
+            end
+        end
+
+
+        return true, table.concat(results, " | ")
+    end
+end
+
+
+--------------------------------------------------------------------------------
+-- MODULE: ConfigManager.lua
+--------------------------------------------------------------------------------
 --[[
     MODULE: ConfigManager.lua
     Mô tả: Hệ thống lưu & tải cấu hình JSON độc lập (81 loại quặng & mọi cài đặt)
@@ -1391,11 +1490,10 @@ function ConfigManager.init(deps)
     end
 end
 
-return ConfigManager
 
-end)()
-
-__modules["UI"] = (function()
+--------------------------------------------------------------------------------
+-- MODULE: UI.lua
+--------------------------------------------------------------------------------
 --[[
     MODULE: UI.lua
     Mô tả: Toàn bộ giao diện Fluent UI, Floating Button tròn & Hệ thống chọn 81 loại quặng
@@ -2287,65 +2385,17 @@ function UI.init(deps)
     end)
 end
 
-return UI
 
-end)()
-
-local function loadModule(name)
-    local mod = __modules[name]
-    if mod == nil then
-        error("[Sell Ores] Module not found: " .. tostring(name))
-    end
-    return mod
-end
-
-local OresData = loadModule("OresData")
-local StateModule = loadModule("State")
-local State = StateModule.State
-local defaultBuy = StateModule.defaultBuy
-local defaultFuse = StateModule.defaultFuse
-
-local Utils = loadModule("Utils")
-
-local ShowcaseBuff = loadModule("ShowcaseBuff")
-ShowcaseBuff.init({
-    Utils = Utils
-})
-
-local MoneyPipeline = loadModule("MoneyPipeline")
-MoneyPipeline.init({
-    Utils = Utils,
-    State = State
-})
-
-local SmartFuser = loadModule("SmartFuser")
-SmartFuser.init({
-    Utils = Utils,
-    State = State
-})
-
-local AutoRoll = loadModule("AutoRoll")
-AutoRoll.init({
-    Utils = Utils,
-    State = State,
-    OresData = OresData,
-    Fluent = Fluent
-})
-
-local ConfigManager = loadModule("ConfigManager")
-ConfigManager.init({
-    State = State,
-    defaultBuy = defaultBuy,
-    defaultFuse = defaultFuse,
-    Fluent = Fluent
-})
-
-local UI = loadModule("UI")
-UI.init({
+--------------------------------------------------------------------------------
+-- BOOTSTRAP INITIALIZATION
+--------------------------------------------------------------------------------
+local deps = {
     Fluent = Fluent,
     SaveManager = SaveManager,
     InterfaceManager = InterfaceManager,
     State = State,
+    defaultBuy = defaultBuy,
+    defaultFuse = defaultFuse,
     OresData = OresData,
     Utils = Utils,
     AutoRoll = AutoRoll,
@@ -2353,4 +2403,11 @@ UI.init({
     MoneyPipeline = MoneyPipeline,
     ShowcaseBuff = ShowcaseBuff,
     ConfigManager = ConfigManager
-})
+}
+
+AutoRoll.init(deps)
+SmartFuser.init(deps)
+MoneyPipeline.init(deps)
+ShowcaseBuff.init(deps)
+ConfigManager.init(deps)
+UI.init(deps)

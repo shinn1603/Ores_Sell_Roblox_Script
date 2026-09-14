@@ -139,6 +139,9 @@ local defaultFuse = {
 }
 for _, o in ipairs(defaultFuse) do State.AllowedFuseOres[o] = true end
 
+State.defaultBuy = defaultBuy
+State.defaultFuse = defaultFuse
+
 -- State, defaultBuy, defaultFuse are now all in local scope for bundler
 
 --------------------------------------------------------------------------------
@@ -159,6 +162,7 @@ local cachedMyBase = nil
 
 function Utils.getMyBase()
     if cachedMyBase and cachedMyBase.Parent then
+        return cachedMyBase
     end
 
     local bases = Workspace:FindFirstChild("Bases")
@@ -172,6 +176,7 @@ function Utils.getMyBase()
             local baseName = child.Name:match("Bases%.(Base%d+)")
             if baseName and bases:FindFirstChild(baseName) then
                 cachedMyBase = bases[baseName]
+                return cachedMyBase
             end
         end
     end
@@ -181,6 +186,7 @@ function Utils.getMyBase()
         local bName = LocalPlayer:GetAttribute(attr)
         if bName and bases:FindFirstChild(tostring(bName)) then
             cachedMyBase = bases[tostring(bName)]
+            return cachedMyBase
         end
     end
 
@@ -189,10 +195,12 @@ function Utils.getMyBase()
         local owner = base:FindFirstChild("Owner") or base:FindFirstChild("Player")
         if (owner and tostring(owner.Value) == LocalPlayer.Name) or base.Name:find(LocalPlayer.Name) then
             cachedMyBase = base
+            return base
         end
         for _, val in pairs(base:GetAttributes()) do
             if tostring(val) == LocalPlayer.Name or tostring(val) == tostring(LocalPlayer.UserId) then
                 cachedMyBase = base
+                return base
             end
         end
     end
@@ -215,6 +223,7 @@ function Utils.getMyBase()
         end
         if closest then
             cachedMyBase = closest
+            return closest
         end
     end
 
@@ -225,6 +234,7 @@ function Utils.getMyBase()
             for _, p in ipairs(pedestals:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and (p.ActionText == "Buy" or p.ActionText:lower():find("buy")) then
                     cachedMyBase = base
+                    return base
                 end
             end
         end
@@ -233,8 +243,10 @@ function Utils.getMyBase()
     local fallback = bases:FindFirstChild("Base4") or bases:FindFirstChild("Base3") or bases:FindFirstChild("Base1")
     if fallback then
         cachedMyBase = fallback
+        return fallback
     end
 
+    return nil
 end
 
 function Utils.teleportTo(cf)
@@ -298,14 +310,17 @@ function Utils.isOreMatchingWhitelist(toolName, whitelistMap)
             local cleanOre = oreName:lower():gsub("%s+", "")
             -- 1. Trùng khớp 100%
             if cleanTool == cleanOre then
+                return true
             end
             -- 2. Trùng khớp khi bỏ chữ 'ore' ở cuối
             local baseTool = cleanTool:gsub("ore$", "")
             local baseOre = cleanOre:gsub("ore$", "")
             if baseTool ~= "" and baseTool == baseOre then
+                return true
             end
         end
     end
+    return false
 end
 
 function Utils.equipToolToHand(tool)
@@ -316,6 +331,7 @@ function Utils.equipToolToHand(tool)
     local backpack = LocalPlayer:FindFirstChild("Backpack")
 
     if tool.Parent == char then
+        return true
     end
 
     if humanoid then
@@ -334,10 +350,12 @@ function Utils.equipToolToHand(tool)
     local t0 = tick()
     while tick() - t0 < 0.6 do
         if tool.Parent == char then
+            return true
         end
         task.wait(0.05)
     end
 
+    return tool.Parent == char
 end
 
 function Utils.equipToolFromWhitelist(whitelistMap)
@@ -346,6 +364,7 @@ function Utils.equipToolFromWhitelist(whitelistMap)
 
     local currentTool = char:FindFirstChildOfClass("Tool")
     if currentTool and Utils.isOreMatchingWhitelist(currentTool.Name, whitelistMap) then
+        return currentTool
     end
 
     local backpack = LocalPlayer:FindFirstChild("Backpack")
@@ -354,11 +373,13 @@ function Utils.equipToolFromWhitelist(whitelistMap)
             if item:IsA("Tool") and Utils.isOreMatchingWhitelist(item.Name, whitelistMap) then
                 local success = Utils.equipToolToHand(item)
                 if success then
+                    return item
                 end
             end
         end
     end
 
+    return nil
 end
 
 function Utils.hasToolInWhitelist(whitelistMap)
@@ -366,6 +387,7 @@ function Utils.hasToolInWhitelist(whitelistMap)
     if char and char:FindFirstChildOfClass("Tool") then
         local t = char:FindFirstChildOfClass("Tool")
         if Utils.isOreMatchingWhitelist(t.Name, whitelistMap) then
+            return true
         end
     end
 
@@ -373,10 +395,12 @@ function Utils.hasToolInWhitelist(whitelistMap)
     if backpack then
         for _, item in ipairs(backpack:GetChildren()) do
             if item:IsA("Tool") and Utils.isOreMatchingWhitelist(item.Name, whitelistMap) then
+                return true
             end
         end
     end
 
+    return false
 end
 
 function Utils.unequipAllTools()
@@ -455,6 +479,7 @@ function AutoRoll.init(deps)
             if lever then
                 for _, p in ipairs(lever:GetDescendants()) do
                     if p:IsA("ProximityPrompt") then
+                        return p
                     end
                 end
             end
@@ -464,10 +489,12 @@ function AutoRoll.init(deps)
             if desc:IsA("ProximityPrompt") then
                 local act = (desc.ActionText or ""):lower()
                 if act:find("auto") or act:find("roll") or (desc.Parent and desc.Parent.Name:lower():find("lever")) then
+                    return desc
                 end
             end
         end
 
+        return nil
     end
 
     -- 2. Tự bấm nút Prompt hiển thị trên màn hình trong ExpressivePromptsGui
@@ -518,9 +545,11 @@ function AutoRoll.init(deps)
                             vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
                         end
                     end)
+                    return true
                 end
             end
         end
+        return false
     end
 
     -- 3. Tự động bấm START và đóng bảng AutoRollerPanel khi xuất hiện
@@ -673,6 +702,7 @@ function AutoRoll.init(deps)
             pcall(function() panel.Visible = false end)
         end
 
+        return true
     end
 
     -- 4. Kích hoạt Auto Roll của game (Thao tác gạt cần Auto Roller thực tế trong Base)
@@ -732,6 +762,7 @@ function AutoRoll.init(deps)
             Utils.teleportTo(prevCF)
         end
 
+        return panelHandled, "Auto Roller"
     end
 
     -- 5. Nhận diện tên quặng trên bục quay
@@ -758,6 +789,7 @@ function AutoRoll.init(deps)
                         if OresData.OreAliases[clean] then return OresData.OreAliases[clean] end
                         for _, ore in ipairs(OresData.SortedOresByLen) do
                             if clean == ore:lower():gsub("%s+", "") or clean:find(ore:lower():gsub("%s+", "")) then
+                                return ore
                             end
                         end
                     end
@@ -782,10 +814,12 @@ function AutoRoll.init(deps)
             for _, ore in ipairs(OresData.SortedOresByLen) do
                 local oClean = ore:lower():gsub("%s+", "")
                 if dName == oClean or (dName:find(oClean) and not dName:find("pedestal") and not dName:find("display") and not dName:find("prompt")) then
+                    return ore
                 end
             end
         end
 
+        return "Unknown"
     end
 
     function AutoRoll.isOreWanted(oreName)
@@ -797,9 +831,11 @@ function AutoRoll.init(deps)
             if active then
                 local wClean = wanted:lower():gsub("%s+", "")
                 if oClean == wClean or oClean:find(wClean) or wClean:find(oClean) then
+                    return true
                 end
             end
         end
+        return false
     end
 
     -- 6. Quét & Mua quặng trên 6 bục (và tự động bật lại Auto Roll sau khi mua xong)
@@ -869,6 +905,7 @@ function AutoRoll.init(deps)
             end
         end
 
+        return boughtCount
     end
 end
 
@@ -910,12 +947,14 @@ function SmartFuser.init(deps)
                 Utils.firePrompt(prompt)
                 task.wait(0.35)
                 if originCF then Utils.teleportTo(originCF) end
+                return true, "Đã nhận thành phẩm Mega Ore!"
             end
         end
 
         -- 2. Kiểm tra xem người chơi có quặng nào trong danh sách cho phép nung ở túi đồ không
         local hasAnyAllowedOre = Utils.hasToolInWhitelist(State.AllowedFuseOres)
         if not hasAnyAllowedOre then
+            return false, "Không có quặng nào trong danh sách cho phép nung ở túi đồ"
         end
 
         -- 3. Tìm tất cả các node đang TRỐNG (Place Ore / Place / Add / Fuse)
@@ -932,6 +971,7 @@ function SmartFuser.init(deps)
         end
 
         if #emptyNodes == 0 then
+            return true, "Fuser đã đầy hoặc đang nung quặng"
         end
 
         -- 4. Nạp quặng vào từng node trống (TELEPORT TRƯỚC → CẦM QUẶNG → BẤM PLACE)
@@ -984,6 +1024,7 @@ function SmartFuser.init(deps)
             Utils.teleportTo(originCF)
         end
 
+        return true, string.format("Đã nạp thành công %d quặng cho Fuser!", placedCount)
     end
 end
 
@@ -1016,12 +1057,14 @@ function MoneyPipeline.init(deps)
                         local n = item.Name:lower()
                         if not n:find("pickaxe") and not n:find("sword") and not n:find("weapon") and not n:find("gun") and not n:find("rod") and not n:find("potion") then
                             if n:find("crate") or n:find("metal") or n:find("bar") or n:find("ore") or n:find("box") then
+                                return item
                             end
                         end
                     end
                 end
             end
         end
+        return nil
     end
 
     function MoneyPipeline.run()
@@ -1067,6 +1110,7 @@ function MoneyPipeline.init(deps)
             end
 
             if not pickOrePrompt then
+                return false, "Mỏ đang đào quặng, chưa có thùng mới"
             end
 
             Utils.teleportTo(cm.CrateSpawnPoint.CFrame + Vector3.new(0, 1.5, 0))
@@ -1121,6 +1165,7 @@ function MoneyPipeline.init(deps)
             else
                 Utils.unequipAllTools()
                 if prevCF then Utils.teleportTo(prevCF) end
+                return false, "Lò nung đang nung, chưa xong thùng thành phẩm"
             end
         end
 
@@ -1156,6 +1201,7 @@ function MoneyPipeline.init(deps)
 
         -- Quay lại vị trí đứng cũ
         Utils.teleportTo(prevCF)
+        return true, "Đã hoàn thành một chu kỳ bán quặng kiếm tiền!"
     end
 end
 
@@ -1213,6 +1259,7 @@ function ShowcaseBuff.init(deps)
                 end
             end
         end
+        return success
     end
 
     -- 2. Tự động kích hoạt Buff x2.75 Showcase Pedestal
@@ -1259,6 +1306,7 @@ function ShowcaseBuff.init(deps)
         end
 
 
+        return true, table.concat(results, " | ")
     end
 end
 
@@ -1316,6 +1364,7 @@ function ConfigManager.init(deps)
         local ok, encoded = pcall(function() return HttpService:JSONEncode(configData) end)
         if not ok then
             if not silent then Fluent:Notify({ Title = "Lỗi Lưu Cấu Hình", Content = "Không thể mã hóa dữ liệu!", Duration = 3 }) end
+            return false
         end
 
         local writeOk = pcall(function()
@@ -1337,6 +1386,7 @@ function ConfigManager.init(deps)
                     Duration = 4
                 })
             end
+            return true
         else
             if not silent then
                 Fluent:Notify({
@@ -1345,6 +1395,7 @@ function ConfigManager.init(deps)
                     Duration = 3
                 })
             end
+            return false
         end
     end
 
@@ -1353,23 +1404,27 @@ function ConfigManager.init(deps)
             if not silent then
                 Fluent:Notify({ Title = "Lỗi Tải Cấu Hình", Content = "Executor không hỗ trợ đọc file!", Duration = 3 })
             end
+            return false
         end
 
         if not isfile(CONFIG_FILE) then
             if not silent then
                 Fluent:Notify({ Title = "Không Tìm Thấy File", Content = "Chưa có file " .. CONFIG_FILE .. " đã lưu trước đó!", Duration = 3 })
             end
+            return false
         end
 
         local content = nil
         local readOk = pcall(function() content = readfile(CONFIG_FILE) end)
         if not readOk or not content or content == "" then
             if not silent then Fluent:Notify({ Title = "Lỗi Đọc File", Content = "Không thể đọc nội dung file config!", Duration = 3 }) end
+            return false
         end
 
         local decodeOk, data = pcall(function() return HttpService:JSONDecode(content) end)
         if not decodeOk or type(data) ~= "table" then
             if not silent then Fluent:Notify({ Title = "Lỗi Giải Mã", Content = "File cấu hình bị lỗi định dạng!", Duration = 3 }) end
+            return false
         end
 
         if type(data.WantedBuyOres) == "table" then
@@ -1415,6 +1470,7 @@ function ConfigManager.init(deps)
                 Duration = 4
             })
         end
+        return true
     end
 
     function ConfigManager.reset()
@@ -1615,6 +1671,7 @@ function UI.init(deps)
                     Default = isSelected
                 }):OnChanged(function(val) targetStateTable[oreName] = val end)
             end
+            return function() end
         end
 
         for _, child in ipairs(card:GetChildren()) do
@@ -1876,6 +1933,7 @@ function UI.init(deps)
             Fluent:Notify({ Title = titleText, Content = "Đã bỏ chọn tất cả quặng!", Duration = 2 })
         end)
 
+        return refreshAllVisuals
     end
 
     -- 4. KHỞI TẠO CÁC TAB
