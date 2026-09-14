@@ -51,27 +51,34 @@ function AutoRoll.init(deps)
         return nil
     end
 
-    -- 2. Tự bấm nút Prompt hiển thị trên màn hình trong ExpressivePromptsGui (đặc biệt hữu ích trên Mobile/Giả lập)
+    -- 2. Tự bấm nút Prompt hiển thị trên màn hình trong ExpressivePromptsGui
     function AutoRoll.clickExpressivePromptForLever()
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         local ep = pg and pg:FindFirstChild("ExpressivePromptsGui")
-        if ep then
-            for _, desc in ipairs(ep:GetDescendants()) do
-                local pName = desc.Parent and desc.Parent.Name:lower() or ""
-                local dName = desc.Name:lower()
-                if dName:find("roller") or dName:find("lever") or pName:find("roller") or pName:find("lever") then
-                    local btn = desc:IsA("GuiButton") and desc or desc:FindFirstChildWhichIsA("GuiButton", true)
-                    if btn then
-                        pcall(function()
-                            if firesignal then
-                                firesignal(btn.Activated)
-                                firesignal(btn.MouseButton1Click)
-                            else
-                                btn.MouseButton1Click:Fire()
-                            end
-                        end)
-                        return true
-                    end
+        if not ep then return false end
+
+        for _, desc in ipairs(ep:GetDescendants()) do
+            local isMatch = false
+            if desc:IsA("TextLabel") and desc.Text:upper():find("AUTO ROLL") then
+                isMatch = true
+            elseif desc.Name:find("AutoRoller") or desc.Name:find("Lever") then
+                isMatch = true
+            end
+
+            if isMatch then
+                local target = desc:FindFirstAncestorWhichIsA("CanvasGroup") 
+                            or desc:FindFirstAncestorWhichIsA("GuiButton") 
+                            or desc:FindFirstAncestorWhichIsA("Frame") 
+                            or desc
+
+                if target then
+                    pcall(function()
+                        if firesignal then
+                            if target.Activated then firesignal(target.Activated) end
+                            if target.MouseButton1Click then firesignal(target.MouseButton1Click) end
+                        end
+                    end)
+                    return true
                 end
             end
         end
@@ -80,7 +87,7 @@ function AutoRoll.init(deps)
 
     -- 3. Tự động bấm START và đóng bảng AutoRollerPanel khi xuất hiện
     function AutoRoll.handleAutoRollerPanel(maxWait)
-        maxWait = maxWait or 1.5
+        maxWait = maxWait or 2.5
         local pg = LocalPlayer:FindFirstChild("PlayerGui")
         if not pg then return false end
 
@@ -97,7 +104,7 @@ function AutoRoll.init(deps)
 
         if not panel or not panel.Visible then return false end
 
-        -- A. Tìm và bấm nút START trong panel
+        -- A. Tìm và bấm nút START trong panel (DÙNG FIRESIGNAL, KHÔNG DÙNG VIM CHUỘT ẢO ĐỂ TRÁNH AUTOCLICK)
         local startBtn = nil
         for _, desc in ipairs(panel:GetDescendants()) do
             if desc:IsA("GuiButton") and desc.Visible then
@@ -124,19 +131,6 @@ function AutoRoll.init(deps)
 
         if startBtn then
             pcall(function()
-                local vim = VirtualInputManager or game:GetService("VirtualInputManager")
-                local guiService = GuiService or game:GetService("GuiService")
-                if vim and startBtn.AbsolutePosition and startBtn.AbsoluteSize then
-                    local pos = startBtn.AbsolutePosition
-                    local size = startBtn.AbsoluteSize
-                    local inset = guiService and guiService:GetGuiInset() or Vector2.new(0, 0)
-                    local cx = pos.X + size.X / 2 + inset.X
-                    local cy = pos.Y + size.Y / 2 + inset.Y
-                    vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-                    task.wait(0.05)
-                    vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-                end
-
                 if firesignal then
                     firesignal(startBtn.Activated)
                     firesignal(startBtn.MouseButton1Click)
@@ -146,9 +140,9 @@ function AutoRoll.init(deps)
             end)
         end
 
-        task.wait(0.25)
+        task.wait(0.3)
 
-        -- B. Tìm và bấm nút ĐÓNG [X]
+        -- B. Tìm và bấm nút ĐÓNG [X] (DÙNG FIRESIGNAL)
         local closeBtn = nil
         local top = panel:FindFirstChild("Top", true)
         if top then
@@ -184,7 +178,7 @@ function AutoRoll.init(deps)
             end)
         end
 
-        task.wait(0.1)
+        task.wait(0.15)
         if panel.Visible then
             pcall(function() panel.Visible = false end)
         end
@@ -192,40 +186,62 @@ function AutoRoll.init(deps)
         return true
     end
 
-    -- 4. Kích hoạt Auto Roll của game (Kết hợp cả 3 phương thức: Lever 3D, Expressive Prompt UI & Direct Panel Open)
+    -- 4. Kích hoạt Auto Roll của game (Thao tác gạt cần Auto Roller thực tế trong Base)
     function AutoRoll.triggerGameAutoRoll(force)
         local leverPrompt = AutoRoll.getAutoRollerPrompt()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local prevCF = hrp and hrp.CFrame
 
-        -- Phương thức A: Teleport sát cần gạt vật lý để tương tác
-        if leverPrompt and leverPrompt.Parent and leverPrompt.Parent:IsA("BasePart") then
-            Utils.teleportTo(leverPrompt.Parent.CFrame + Vector3.new(0, 0.5, 0))
-            task.wait(0.25)
-            Utils.firePrompt(leverPrompt)
+        -- Bước 1: Tìm tọa độ Cần Gạt
+        local leverCF = nil
+        if leverPrompt and leverPrompt.Parent then
+            if leverPrompt.Parent:IsA("BasePart") then
+                leverCF = leverPrompt.Parent.CFrame
+            elseif leverPrompt.Parent:IsA("Model") then
+                leverCF = leverPrompt.Parent:GetPivot()
+            end
+        end
+
+        if not leverCF then
+            local base = Utils.getMyBase()
+            local roller = base and base:FindFirstChild("Roller")
+            local autoRoller = roller and roller:FindFirstChild("AutoRoller")
+            if autoRoller then
+                leverCF = autoRoller:GetPivot()
+            end
+        end
+
+        -- Bước 2: Teleport đến đứng sát trước cần gạt và quay mặt vào cần
+        if leverCF and hrp then
+            local standCF = leverCF + (leverCF.LookVector * 2.5) + Vector3.new(0, 0.8, 0)
+            Utils.teleportTo(standCF)
             task.wait(0.15)
+            pcall(function()
+                hrp.CFrame = CFrame.new(hrp.Position, leverCF.Position)
+            end)
+            task.wait(0.1)
         end
 
-        -- Phương thức B: Bấm nút trên ExpressivePromptsGui nếu có
+        -- Bước 3: Kích hoạt Cần Gạt vật lý qua ProximityPrompt
+        if leverPrompt then
+            Utils.firePrompt(leverPrompt)
+            task.wait(0.2)
+        end
+
+        -- Bước 4: Kích hoạt nút Prompt trên màn hình nếu có
         AutoRoll.clickExpressivePromptForLever()
+        task.wait(0.2)
 
-        -- Phương thức C: Trực tiếp mở AutoRollerPanel nếu chưa mở
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        local mainFrames = pg and pg:FindFirstChild("MainFrames")
-        local panel = mainFrames and mainFrames:FindFirstChild("AutoRollerPanel", true)
-        if panel and not panel.Visible then
-            pcall(function() panel.Visible = true end)
-        end
+        -- Bước 5: Chờ bảng AutoRollerPanel bung ra -> bấm START -> đóng bảng
+        local panelHandled = AutoRoll.handleAutoRollerPanel(2.5)
 
-        -- Tự động chờ bảng xuất hiện, bấm START và đóng lại ngay lập tức
-        AutoRoll.handleAutoRollerPanel(1.5)
-
+        -- Bước 6: Trả nhân vật về vị trí ban đầu
         if prevCF then
             Utils.teleportTo(prevCF)
         end
 
-        return true, "Auto Roller"
+        return panelHandled, "Auto Roller"
     end
 
     -- 5. Nhận diện tên quặng trên bục quay

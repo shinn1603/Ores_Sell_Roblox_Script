@@ -37,16 +37,6 @@ function ShowcaseBuff.init(deps)
                 local gemBtn = (row1 and row1:FindFirstChild("ApplyGemsButton")) or topPane:FindFirstChild("ApplyGemsButton", true)
                 if gemBtn and gemBtn:IsA("GuiButton") and gemBtn.Visible then
                     pcall(function()
-                        local vim = VirtualInputManager or game:GetService("VirtualInputManager")
-                        if vim and gemBtn.AbsolutePosition and gemBtn.AbsoluteSize then
-                            local pos = gemBtn.AbsolutePosition
-                            local size = gemBtn.AbsoluteSize
-                            local cx = pos.X + size.X / 2
-                            local cy = pos.Y + size.Y / 2
-                            vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-                            task.wait(0.04)
-                            vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-                        end
                         if firesignal then
                             firesignal(gemBtn.Activated)
                             firesignal(gemBtn.MouseButton1Click)

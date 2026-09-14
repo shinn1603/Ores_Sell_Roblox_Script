@@ -116,17 +116,33 @@ function Utils.firePrompt(prompt)
         pcall(function()
             prompt.MaxActivationDistance = 9999
             prompt.RequiresLineOfSight = false
-            prompt.HoldDuration = 0
             prompt.Enabled = true
+
+            local holdTime = prompt.HoldDuration
+            if not holdTime or holdTime <= 0 then
+                holdTime = 0.1
+            end
+
+            -- 1. Gọi trực tiếp API native của Roblox Engine
+            pcall(function()
+                prompt:InputHoldBegin()
+                task.wait(holdTime + 0.05)
+                prompt:InputHoldEnd()
+            end)
+
+            -- 2. Hỗ trợ executor C-level
             if fireproximityprompt then
+                pcall(function() fireproximityprompt(prompt, 0, true) end)
                 pcall(function() fireproximityprompt(prompt) end)
             end
+
+            -- 3. VirtualInputManager (luôn đảm bảo nhả phím đúng thời gian)
             local vim = VirtualInputManager or game:GetService("VirtualInputManager")
             if vim then
                 local keyCode = prompt.KeyboardKeyCode or Enum.KeyCode.E
                 pcall(function()
                     vim:SendKeyEvent(true, keyCode, false, game)
-                    task.wait(0.08)
+                    task.wait(holdTime)
                     vim:SendKeyEvent(false, keyCode, false, game)
                 end)
             end

@@ -473,7 +473,8 @@ function UI.init(deps)
 
             task.spawn(function()
                 while State.ProFarmLoop do
-                    if State.AutoApplyGems then
+                    if State.AutoApplyGems and (tick() - (State.LastGemsApplied or 0) >= 15) then
+                        State.LastGemsApplied = tick()
                         ShowcaseBuff.applyGems(false)
                     end
 
@@ -592,22 +593,6 @@ function UI.init(deps)
         end
     end)
 
-    -- Giám sát ngầm AutoRollerPanel 24/7
-    task.spawn(function()
-        while true do
-            pcall(function()
-                if State.AutoRollBuyEnabled or State.ProFarmLoop then
-                    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-                    local mainFrames = pg and pg:FindFirstChild("MainFrames")
-                    local panel = mainFrames and mainFrames:FindFirstChild("AutoRollerPanel", true)
-                    if panel and panel.Visible then
-                        AutoRoll.handleAutoRollerPanel(0.1)
-                    end
-                end
-            end)
-            task.wait(0.3)
-        end
-    end)
 
     Tabs.RollBuy:AddToggle("ToggleAutoReRoll", {
         Title = "🔄 Tự Động Kích Hoạt Lại Auto Roll Sau Khi Mua",
