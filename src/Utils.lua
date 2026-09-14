@@ -233,4 +233,62 @@ function Utils.equipToolFromWhitelist(whitelistMap)
     return nil
 end
 
+function Utils.hasToolInWhitelist(whitelistMap)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChildOfClass("Tool") then
+        local t = char:FindFirstChildOfClass("Tool")
+        if Utils.isOreMatchingWhitelist(t.Name, whitelistMap) then
+            return true
+        end
+    end
+
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") and Utils.isOreMatchingWhitelist(item.Name, whitelistMap) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+function Utils.unequipAllTools()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function() hum:UnequipTools() end)
+    end
+end
+
+function Utils.clearBlurAndDimmer()
+    pcall(function()
+        local lighting = game:GetService("Lighting")
+        for _, obj in ipairs(lighting:GetChildren()) do
+            if obj:IsA("BlurEffect") or obj:IsA("ColorCorrectionEffect") then
+                obj.Enabled = false
+            end
+        end
+        local cam = Workspace.CurrentCamera
+        if cam then
+            for _, obj in ipairs(cam:GetChildren()) do
+                if obj:IsA("BlurEffect") or obj:IsA("ColorCorrectionEffect") then
+                    obj.Enabled = false
+                end
+            end
+        end
+        local pg = LocalPlayer:FindFirstChild("PlayerGui")
+        local mf = pg and pg:FindFirstChild("MainFrames")
+        if mf then
+            for _, child in ipairs(mf:GetChildren()) do
+                local cName = child.Name:lower()
+                if (cName:find("dim") or cName:find("blur") or cName:find("overlay") or cName:find("shade") or cName:find("dark")) and child:IsA("GuiObject") then
+                    child.Visible = false
+                end
+            end
+        end
+    end)
+end
+
 return Utils

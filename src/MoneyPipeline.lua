@@ -12,6 +12,27 @@ function MoneyPipeline.init(deps)
     local Utils = deps.Utils
     local State = deps.State
 
+    local function findPipelineTool()
+        local char = LocalPlayer.Character
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        local containers = {char, backpack}
+        for _, container in ipairs(containers) do
+            if container then
+                for _, item in ipairs(container:GetChildren()) do
+                    if item:IsA("Tool") then
+                        local n = item.Name:lower()
+                        if not n:find("pickaxe") and not n:find("sword") and not n:find("weapon") and not n:find("gun") and not n:find("rod") and not n:find("potion") then
+                            if n:find("crate") or n:find("metal") or n:find("bar") or n:find("ore") or n:find("box") then
+                                return item
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
     function MoneyPipeline.run()
         local base = Utils.getMyBase()
         if not base then return false, "Không tìm thấy căn cứ" end
@@ -78,7 +99,7 @@ function MoneyPipeline.init(deps)
                 Utils.teleportTo(furnace.PlaceCratesPromptPart.CFrame + Vector3.new(0, 1.5, 0))
                 task.wait(stepDelay)
 
-                local crateTool = char:FindFirstChildOfClass("Tool") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChildOfClass("Tool"))
+                local crateTool = findPipelineTool()
                 if crateTool then Utils.equipToolToHand(crateTool) end
                 task.wait(0.12)
 
@@ -108,12 +129,14 @@ function MoneyPipeline.init(deps)
                 Utils.firePrompt(metalPrompt)
                 task.wait(stepDelay + 0.15)
             else
+                Utils.unequipAllTools()
+                if prevCF then Utils.teleportTo(prevCF) end
                 return false, "Lò nung đang nung, chưa xong thùng thành phẩm"
             end
         end
 
         -- BƯỚC 4: Cầm chắc thùng trên tay và đem bán tại SellerTable
-        local metalTool = char:FindFirstChildOfClass("Tool") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChildOfClass("Tool"))
+        local metalTool = findPipelineTool()
         if metalTool then Utils.equipToolToHand(metalTool) end
         task.wait(0.15)
 
@@ -138,6 +161,9 @@ function MoneyPipeline.init(deps)
             Utils.firePrompt(sellPrompt)
             task.wait(stepDelay)
         end
+
+        -- Cất tool vào túi sau khi bán xong
+        Utils.unequipAllTools()
 
         -- Quay lại vị trí đứng cũ
         Utils.teleportTo(prevCF)

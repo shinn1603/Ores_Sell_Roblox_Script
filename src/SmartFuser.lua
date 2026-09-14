@@ -26,7 +26,7 @@ function SmartFuser.init(deps)
         for _, prompt in ipairs(fuser:GetDescendants()) do
             if prompt:IsA("ProximityPrompt") and prompt.Enabled and prompt.ActionText:lower():find("claim") then
                 if prompt.Parent and prompt.Parent:IsA("BasePart") then
-                    Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 0.5, 0))
+                    Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 2.0, 0))
                     task.wait(0.25)
                 end
                 Utils.firePrompt(prompt)
@@ -37,7 +37,7 @@ function SmartFuser.init(deps)
         end
 
         -- 2. Kiểm tra xem người chơi có quặng nào trong danh sách cho phép nung ở túi đồ không
-        local hasAnyAllowedOre = Utils.equipToolFromWhitelist(State.AllowedFuseOres)
+        local hasAnyAllowedOre = Utils.hasToolInWhitelist(State.AllowedFuseOres)
         if not hasAnyAllowedOre then
             return false, "Không có quặng nào trong danh sách cho phép nung ở túi đồ"
         end
@@ -59,9 +59,18 @@ function SmartFuser.init(deps)
             return true, "Fuser đã đầy hoặc đang nung quặng"
         end
 
-        -- 4. Nạp quặng vào từng node trống (CẦM QUẶNG TRÊN TAY RỒI MỚI BẤM PLACE)
+        -- 4. Nạp quặng vào từng node trống (TELEPORT TRƯỚC → CẦM QUẶNG → BẤM PLACE)
         local placedCount = 0
         for _, prompt in ipairs(emptyNodes) do
+            -- Bước A: Teleport đến node TRƯỚC (chưa cầm gì cả!)
+            if prompt.Parent and prompt.Parent:IsA("BasePart") then
+                Utils.unequipAllTools()
+                task.wait(0.1)
+                Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 2.0, 0))
+                task.wait(0.35)
+            end
+
+            -- Bước B: SAU KHI ĐÃ ĐỨNG YÊN, mới cầm quặng lên tay
             local tool = Utils.equipToolFromWhitelist(State.AllowedFuseOres)
             if not tool then
                 -- Không còn quặng nào trong danh sách cho phép ở túi đồ -> Dừng, bảo vệ quặng xịn!
@@ -70,29 +79,30 @@ function SmartFuser.init(deps)
 
             local okEquip = Utils.equipToolToHand(tool)
             if not okEquip then break end
+            task.wait(0.25) -- Đợi game server xác nhận tool đã trên tay
 
-            -- Đứng sát trước mặt node trên sàn
-            if prompt.Parent and prompt.Parent:IsA("BasePart") then
-                Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 0.5, 0))
-                task.wait(0.3)
-            end
-
-            if tool.Parent ~= char then
-                Utils.equipToolToHand(tool)
-                task.wait(0.15)
-            end
-
+            -- Bước C: Kích hoạt prompt để đặt quặng vào Fuser
             Utils.firePrompt(prompt)
-            task.wait(0.35)
+            task.wait(0.4)
 
-            -- Kiểm tra nếu tool vẫn còn trên tay (chưa ăn prompt) -> thử kích hoạt lại 1 lần nữa
-            if tool.Parent == char and prompt.Enabled then
-                Utils.firePrompt(prompt)
-                task.wait(0.25)
+            -- Bước D: Nếu tool vẫn còn trên tay (game chưa nhận) -> thử lại 2 lần nữa
+            for retry = 1, 2 do
+                if tool.Parent == char and prompt.Enabled then
+                    -- Equip lại tool (đề phòng bị drop)
+                    Utils.equipToolToHand(tool)
+                    task.wait(0.2)
+                    Utils.firePrompt(prompt)
+                    task.wait(0.35)
+                else
+                    break
+                end
             end
 
             placedCount = placedCount + 1
         end
+
+        -- Cất toàn bộ tool vào túi, không cầm trên tay
+        Utils.unequipAllTools()
 
         -- QUAY LẠI VỊ TRÍ ĐỨNG BAN ĐẦU (Không đứng ngơ ngác ở Fuser!)
         if originCF then

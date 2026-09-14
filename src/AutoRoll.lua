@@ -74,8 +74,29 @@ function AutoRoll.init(deps)
                 if target then
                     pcall(function()
                         if firesignal then
-                            if target.Activated then firesignal(target.Activated) end
-                            if target.MouseButton1Click then firesignal(target.MouseButton1Click) end
+                            if target:IsA("GuiButton") then
+                                if target.Activated then firesignal(target.Activated) end
+                                if target.MouseButton1Click then firesignal(target.MouseButton1Click) end
+                            end
+                            for _, btn in ipairs(target:GetDescendants()) do
+                                if btn:IsA("GuiButton") then
+                                    if btn.Activated then firesignal(btn.Activated) end
+                                    if btn.MouseButton1Click then firesignal(btn.MouseButton1Click) end
+                                end
+                            end
+                        end
+                    end)
+
+                    pcall(function()
+                        local vim = VirtualInputManager or game:GetService("VirtualInputManager")
+                        if vim and target.AbsolutePosition and target.AbsoluteSize and target.AbsoluteSize.X > 0 then
+                            local pos = target.AbsolutePosition
+                            local size = target.AbsoluteSize
+                            local cx = pos.X + size.X / 2
+                            local cy = pos.Y + size.Y / 2
+                            vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                            task.wait(0.06)
+                            vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
                         end
                     end)
                     return true
@@ -95,7 +116,7 @@ function AutoRoll.init(deps)
         local panel = nil
         while tick() - t0 <= maxWait do
             local mainFrames = pg:FindFirstChild("MainFrames")
-            panel = mainFrames and mainFrames:FindFirstChild("AutoRollerPanel", true)
+            panel = mainFrames and (mainFrames:FindFirstChild("AutoRollerPanel", true) or (mainFrames:FindFirstChild("Frames") and mainFrames.Frames:FindFirstChild("AutoRollerPanel")))
             if panel and panel.Visible then
                 break
             end
@@ -104,17 +125,17 @@ function AutoRoll.init(deps)
 
         if not panel or not panel.Visible then return false end
 
-        -- A. Tìm nút START trong panel
+        -- A. Tìm nút START trong panel (TextLabel hoặc TextButton hoặc nút màu xanh lá)
         local startBtn = nil
         for _, desc in ipairs(panel:GetDescendants()) do
-            if desc:IsA("TextLabel") and desc.Text:upper():find("START") and not desc.Text:upper():find("RESTART") then
-                startBtn = desc:FindFirstAncestorWhichIsA("GuiButton")
-                if not startBtn then
-                    local frame = desc:FindFirstAncestorWhichIsA("Frame") or desc.Parent
-                    if frame then
-                        startBtn = frame:FindFirstChildWhichIsA("GuiButton", true) or frame
-                    end
-                end
+            local txt = ""
+            if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                txt = desc.Text:upper()
+            end
+            if txt:find("START") and not txt:find("RESTART") and not txt:find("STOP") then
+                startBtn = desc:FindFirstAncestorWhichIsA("GuiButton") 
+                        or (desc:IsA("GuiButton") and desc)
+                        or desc.Parent
                 if startBtn then break end
             end
         end
@@ -129,7 +150,7 @@ function AutoRoll.init(deps)
                         break
                     end
                     local col = desc.BackgroundColor3
-                    if col.G > 0.5 and col.R < 0.4 and col.B < 0.4 then
+                    if col and col.G > 0.5 and col.R < 0.4 and col.B < 0.4 then
                         startBtn = desc
                         break
                     end
@@ -228,18 +249,8 @@ function AutoRoll.init(deps)
 
         task.wait(0.4)
 
-        -- C. Dọn sạch lớp màn hình mờ xám (Dimmer / Background Overlay) của game
-        pcall(function()
-            local mf = pg:FindFirstChild("MainFrames")
-            if mf then
-                for _, child in ipairs(mf:GetChildren()) do
-                    local cName = child.Name:lower()
-                    if (cName:find("dim") or cName:find("blur") or cName:find("overlay") or cName:find("shade") or cName:find("dark") or cName:find("background")) and child:IsA("GuiObject") then
-                        child.Visible = false
-                    end
-                end
-            end
-        end)
+        -- C. Dọn sạch lớp màn hình mờ xám (Dimmer / Blur Effect / Overlay) của game
+        Utils.clearBlurAndDimmer()
 
         if panel.Visible then
             pcall(function() panel.Visible = false end)
@@ -274,15 +285,11 @@ function AutoRoll.init(deps)
             end
         end
 
-        -- Bước 2: Teleport đến đứng sát trước cần gạt và quay mặt vào cần
+        -- Bước 2: Teleport đến đứng an toàn ngay trên sàn cạnh cần gạt (1.5 studs trên part, KHÔNG dùng LookVector đâm xuyên tường hay kẹt mesh!)
         if leverCF and hrp then
-            local standCF = leverCF + (leverCF.LookVector * 2.5) + Vector3.new(0, 0.8, 0)
+            local standCF = leverCF + Vector3.new(0, 1.5, 0)
             Utils.teleportTo(standCF)
-            task.wait(0.15)
-            pcall(function()
-                hrp.CFrame = CFrame.new(hrp.Position, leverCF.Position)
-            end)
-            task.wait(0.1)
+            task.wait(0.2)
         end
 
         -- Bước 3: Kích hoạt Cần Gạt vật lý qua ProximityPrompt
@@ -291,14 +298,20 @@ function AutoRoll.init(deps)
             task.wait(0.2)
         end
 
-        -- Bước 4: Kích hoạt nút Prompt trên màn hình nếu có
+        -- Bước 4: Kích hoạt nút Prompt trên màn hình nếu có (ExpressivePromptsGui)
         AutoRoll.clickExpressivePromptForLever()
         task.wait(0.2)
 
         -- Bước 5: Chờ bảng AutoRollerPanel bung ra -> bấm START -> đóng bảng
         local panelHandled = AutoRoll.handleAutoRollerPanel(2.5)
 
-        -- Bước 6: Trả nhân vật về vị trí ban đầu
+        -- Bước 6: Dọn sạch mọi hiệu ứng xám/mờ màn hình còn sót lại
+        Utils.clearBlurAndDimmer()
+
+        -- Bước 7: Cất hết tool/vật phẩm vào túi, không cầm trên tay
+        Utils.unequipAllTools()
+
+        -- Bước 8: Trả nhân vật về vị trí ban đầu
         if prevCF then
             Utils.teleportTo(prevCF)
         end

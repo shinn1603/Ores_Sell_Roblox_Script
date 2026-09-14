@@ -94,27 +94,6 @@ function ShowcaseBuff.init(deps)
             end
         end
 
-        -- Nếu có bục đang trống (Place Ore) -> Cầm quặng đặt lên bục
-        local bases = Workspace:FindFirstChild("Bases")
-        local bObj = bases and (bases:FindFirstChild(myBaseName) or bases:FindFirstChild("Base4"))
-        if bObj then
-            for _, name in ipairs({"OreShowcasePedestal1", "OreShowcasePedestal2"}) do
-                local ped = bObj:FindFirstChild(name)
-                if ped then
-                    for _, p in ipairs(ped:GetDescendants()) do
-                        if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Ore" then
-                            local tool = Utils.equipToolFromWhitelist(nil)
-                            if tool then
-                                if p.Parent and p.Parent:IsA("BasePart") then Utils.teleportTo(p.Parent.CFrame) end
-                                task.wait(0.1)
-                                Utils.firePrompt(p)
-                                task.wait(0.2)
-                            end
-                        end
-                    end
-                end
-            end
-        end
 
         return true, table.concat(results, " | ")
     end
