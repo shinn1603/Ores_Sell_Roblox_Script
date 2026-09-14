@@ -472,11 +472,7 @@ function UI.init(deps)
             Fluent:Notify({ Title = "💰 Auto Farm Tiền", Content = "Đã BẬT quy trình bán tiền tự động!", Duration = 3 })
             task.spawn(function()
                 while State.AutoFarmMoney do
-                    if not State.isBusy then
-                        State.isBusy = true
-                        pcall(MoneyPipeline.run)
-                        State.isBusy = false
-                    end
+                    pcall(MoneyPipeline.run)
                     task.wait(State.MoneyPipelineInterval or 12)
                 end
             end)
@@ -536,19 +532,11 @@ function UI.init(deps)
             task.spawn(function()
                 task.wait(0.2)
                 if State.AutoReRollAfterBuy then
-                    if not State.isBusy then
-                        State.isBusy = true
-                        pcall(AutoRoll.triggerGameAutoRoll, false)
-                        State.isBusy = false
-                    end
+                    pcall(AutoRoll.triggerGameAutoRoll, false)
                 end
 
                 while State.AutoRollBuyEnabled do
-                    if not State.isBusy then
-                        State.isBusy = true
-                        pcall(AutoRoll.checkAndBuyMatchingPedestals)
-                        State.isBusy = false
-                    end
+                    pcall(AutoRoll.checkAndBuyMatchingPedestals)
                     task.wait(State.RollScanDelay or 0.5)
                 end
             end)
@@ -623,11 +611,7 @@ function UI.init(deps)
             Fluent:Notify({ Title = "🔥 Smart Fuser", Content = "Đã BẬT tự động nạp & nhận quặng Fuser!", Duration = 3 })
             task.spawn(function()
                 while State.AutoFuserLoop do
-                    if not State.isBusy then
-                        State.isBusy = true
-                        pcall(SmartFuser.run)
-                        State.isBusy = false
-                    end
+                    pcall(SmartFuser.run)
                     task.wait(State.FuserInterval or 8)
                 end
             end)
@@ -700,11 +684,7 @@ function UI.init(deps)
             Fluent:Notify({ Title = "⭐ Buff Showcase", Content = "Đã BẬT tự động duy trì Buff Showcase!", Duration = 3 })
             task.spawn(function()
                 while State.AutoActivateBuff do
-                    if not State.isBusy then
-                        State.isBusy = true
-                        pcall(ShowcaseBuff.activateBuff, false)
-                        State.isBusy = false
-                    end
+                    pcall(ShowcaseBuff.activateBuff, false)
                     task.wait(30) -- Kiểm tra mỗi 30s, khi sắp hết hạn sẽ tự động kích hoạt lại
                 end
             end)
