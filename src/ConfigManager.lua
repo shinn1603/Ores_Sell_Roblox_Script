@@ -44,7 +44,8 @@ function ConfigManager.init(deps)
                 JumpPowerValue = State.JumpPowerValue,
                 InfiniteJump = State.InfiniteJump,
                 Noclip = State.Noclip,
-                AntiAFK = State.AntiAFK
+                AntiAFK = State.AntiAFK,
+                AutoLoadConfig = State.AutoLoadConfig
             }
         }
 
@@ -147,6 +148,7 @@ function ConfigManager.init(deps)
             if s.InfiniteJump ~= nil then State.InfiniteJump = s.InfiniteJump end
             if s.Noclip ~= nil then State.Noclip = s.Noclip end
             if s.AntiAFK ~= nil then State.AntiAFK = s.AntiAFK end
+            if s.AutoLoadConfig ~= nil then State.AutoLoadConfig = s.AutoLoadConfig end
 
             -- Đồng bộ UI Toggles nếu đã được tạo
             local opt = Fluent and Fluent.Options
@@ -157,6 +159,7 @@ function ConfigManager.init(deps)
                     if opt.ToggleAutoFuser and s.AutoFuserLoop ~= nil then opt.ToggleAutoFuser:SetValue(s.AutoFuserLoop) end
                     if opt.ToggleAutoApplyGems and s.AutoApplyGems ~= nil then opt.ToggleAutoApplyGems:SetValue(s.AutoApplyGems) end
                     if opt.ToggleAutoBuff1H and s.AutoActivateBuff ~= nil then opt.ToggleAutoBuff1H:SetValue(s.AutoActivateBuff) end
+                    if opt.ToggleAutoLoadConfig and s.AutoLoadConfig ~= nil then opt.ToggleAutoLoadConfig:SetValue(s.AutoLoadConfig) end
                 end)
             end
         end
@@ -190,6 +193,26 @@ function ConfigManager.init(deps)
             Content = "Đã khôi phục danh sách quặng về mặc định chuẩn!",
             Duration = 3
         })
+    end
+
+    function ConfigManager.deleteFile()
+        if delfile and isfile and isfile(CONFIG_FILE) then
+            local ok = pcall(delfile, CONFIG_FILE)
+            if ok then
+                Fluent:Notify({
+                    Title = "🗑️ ĐÃ XÓA FILE CẤU HÌNH",
+                    Content = "Đã xóa file " .. CONFIG_FILE .. " thành công!",
+                    Duration = 4
+                })
+                return true
+            end
+        end
+        Fluent:Notify({
+            Title = "Thông Báo",
+            Content = "Không tìm thấy file hoặc executor không hỗ trợ delfile!",
+            Duration = 3
+        })
+        return false
     end
 end
 

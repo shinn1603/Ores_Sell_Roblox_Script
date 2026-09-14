@@ -40,7 +40,10 @@ local State = {
     JumpPowerValue = 50,
     InfiniteJump = false,
     Noclip = false,
-    AntiAFK = true
+    AntiAFK = true,
+
+    -- 6. Config System
+    AutoLoadConfig = true
 }
 
 -- Mặc định danh sách quặng muốn mua: Quặng Thần Thoại / Tối Thượng

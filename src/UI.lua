@@ -516,11 +516,6 @@ function UI.init(deps)
         end
     })
 
-    Tabs.Farm:AddButton({
-        Title = "💾 Lưu Cài Đặt Farm Tiền (Save Config)",
-        Callback = function() ConfigManager.save(false) end
-    })
-
     ----------------------------------------------------------------------------
     -- TAB 2: 🎲 AUTO ROLL & MUA QUẶNG
     ----------------------------------------------------------------------------
@@ -607,11 +602,6 @@ function UI.init(deps)
         "buy"
     )
 
-    Tabs.RollBuy:AddButton({
-        Title = "💾 Lưu Danh Sách Quặng Mua & Cài Đặt (Save Config)",
-        Callback = function() ConfigManager.save(false) end
-    })
-
     ----------------------------------------------------------------------------
     -- TAB 3: 🔥 SMART FUSER
     ----------------------------------------------------------------------------
@@ -668,11 +658,6 @@ function UI.init(deps)
         State.AllowedFuseOres,
         "fuse"
     )
-
-    Tabs.Fuser:AddButton({
-        Title = "💾 Lưu Danh Sách Quặng Nung & Cài Đặt (Save Config)",
-        Callback = function() ConfigManager.save(false) end
-    })
 
     ----------------------------------------------------------------------------
     -- TAB 4: ⭐ BUFF & GEMS
@@ -740,11 +725,6 @@ function UI.init(deps)
             local ok, msg = ShowcaseBuff.activateBuff(false)
             Fluent:Notify({ Title = "Buff Showcase", Content = msg or "Đã kích hoạt Buff Showcase!", Duration = 4 })
         end
-    })
-
-    Tabs.Buffs:AddButton({
-        Title = "💾 Lưu Cài Đặt Buff & Gems (Save Config)",
-        Callback = function() ConfigManager.save(false) end
     })
 
     ----------------------------------------------------------------------------
@@ -914,14 +894,16 @@ function UI.init(deps)
         end
     end)
 
-    -- TAB 6: SETTINGS
+    ----------------------------------------------------------------------------
+    -- TAB 7: ⚙️ CẤU HÌNH & CÀI ĐẶT (CONFIG MANAGER & SETTINGS)
+    ----------------------------------------------------------------------------
     Tabs.Settings:AddParagraph({
-        Title = "💾 HỆ THỐNG LƯU / TẢI CẤU HÌNH (JSON FILE)",
-        Content = "Lưu lại toàn bộ 81 loại quặng bạn đã chọn mua [✓], quặng nung [✓] và mọi thanh trượt/toggle."
+        Title = "💾 QUẢN LÝ CẤU HÌNH TOÀN HỆ THỐNG (USER CONFIG)",
+        Content = "Tập trung toàn bộ việc Lưu & Nạp cấu hình độc lập tại đây.\nFile SellOres_UserConfig.json lưu giữ vĩnh viễn:\n• Danh sách 81 loại quặng đã chọn mua [✓]\n• Danh sách quặng cho phép nung Fuser [✓]\n• Mọi công tắc bật/tắt (Farm Tiền, Roll & Mua, Fuser, Buffs, v.v.) và các thanh trượt delay."
     })
 
     Tabs.Settings:AddButton({
-        Title = "💾 LƯU CẤU HÌNH NGAY BÂY GIỜ (QUẶNG & CÀI ĐẶT)",
+        Title = "💾 LƯU TOÀN BỘ CẤU HÌNH HIỆN TẠI (SAVE CONFIG)",
         Callback = function() ConfigManager.save(false) end
     })
 
@@ -930,9 +912,26 @@ function UI.init(deps)
         Callback = function() ConfigManager.load(false) end
     })
 
+    Tabs.Settings:AddToggle("ToggleAutoLoadConfig", {
+        Title = "⚡ Tự Động Nạp Cấu Hình Khi Khởi Chạy Script",
+        Default = State.AutoLoadConfig ~= false
+    }):OnChanged(function()
+        State.AutoLoadConfig = Options.ToggleAutoLoadConfig.Value
+    end)
+
     Tabs.Settings:AddButton({
-        Title = "🔄 KHÔI PHỤC CẤU HÌNH MẶC ĐỊNH (RESET)",
+        Title = "🔄 KHÔI PHỤC DANH SÁCH MẶC ĐỊNH (RESET CONFIG)",
         Callback = function() ConfigManager.reset() end
+    })
+
+    Tabs.Settings:AddButton({
+        Title = "🗑️ XÓA FILE CẤU HÌNH (DELETE CONFIG FILE)",
+        Callback = function() ConfigManager.deleteFile() end
+    })
+
+    Tabs.Settings:AddParagraph({
+        Title = "🎨 TÙY BIẾN GIAO DIỆN & PHÍM TẮT (THEMES & KEYBINDS)",
+        Content = "Tùy chỉnh màu sắc chủ đề Fluent Design, hiệu ứng trong suốt Acrylic và phím tắt mở lại menu."
     })
 
     SaveManager:SetLibrary(Fluent)
@@ -951,13 +950,13 @@ function UI.init(deps)
 
     Fluent:Notify({
         Title = "Sell Ores Hub v7.8 Ultimate PRO",
-        Content = "Đã tối ưu Modular: Tự mở bảng, bấm START & Tự đóng bảng 100% rảnh tay!",
+        Content = "Đã khởi tạo xong! Từng chức năng và phần Cấu hình được tách biệt hoàn toàn.",
         Duration = 5
     })
 
     task.spawn(function()
         task.wait(0.6)
-        if isfile and isfile("SellOres_UserConfig.json") then
+        if State.AutoLoadConfig and isfile and isfile("SellOres_UserConfig.json") then
             local success = ConfigManager.load(true)
             if success then
                 Fluent:Notify({
