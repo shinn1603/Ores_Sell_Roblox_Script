@@ -27,14 +27,17 @@ function ConfigManager.init(deps)
             WantedBuyOres = State.WantedBuyOres,
             AllowedFuseOres = State.AllowedFuseOres,
             Settings = {
-                AutoMoneyPipeline = State.AutoMoneyPipeline,
+                AutoFarmMoney = State.AutoFarmMoney,
                 MoneyPipelineInterval = State.MoneyPipelineInterval,
                 MoneyStepDelay = State.MoneyStepDelay,
+                AutoRollBuyEnabled = State.AutoRollBuyEnabled,
                 RollScanDelay = State.RollScanDelay,
-                AutoApplyGems = State.AutoApplyGems,
-                AutoActivateBuff = State.AutoActivateBuff,
                 BuyAllPedestals = State.BuyAllPedestals,
                 AutoReRollAfterBuy = State.AutoReRollAfterBuy,
+                AutoFuserLoop = State.AutoFuserLoop,
+                FuserInterval = State.FuserInterval,
+                AutoApplyGems = State.AutoApplyGems,
+                AutoActivateBuff = State.AutoActivateBuff,
                 WalkSpeedEnabled = State.WalkSpeedEnabled,
                 WalkSpeedValue = State.WalkSpeedValue,
                 JumpPowerEnabled = State.JumpPowerEnabled,
@@ -125,14 +128,18 @@ function ConfigManager.init(deps)
 
         if type(data.Settings) == "table" then
             local s = data.Settings
-            if s.AutoMoneyPipeline ~= nil then State.AutoMoneyPipeline = s.AutoMoneyPipeline end
+            if s.AutoFarmMoney ~= nil then State.AutoFarmMoney = s.AutoFarmMoney end
+            if s.AutoMoneyPipeline ~= nil and s.AutoFarmMoney == nil then State.AutoFarmMoney = s.AutoMoneyPipeline end
             if s.MoneyPipelineInterval ~= nil then State.MoneyPipelineInterval = s.MoneyPipelineInterval end
             if s.MoneyStepDelay ~= nil then State.MoneyStepDelay = s.MoneyStepDelay end
+            if s.AutoRollBuyEnabled ~= nil then State.AutoRollBuyEnabled = s.AutoRollBuyEnabled end
             if s.RollScanDelay ~= nil then State.RollScanDelay = s.RollScanDelay end
-            if s.AutoApplyGems ~= nil then State.AutoApplyGems = s.AutoApplyGems end
-            if s.AutoActivateBuff ~= nil then State.AutoActivateBuff = s.AutoActivateBuff end
             if s.BuyAllPedestals ~= nil then State.BuyAllPedestals = s.BuyAllPedestals end
             if s.AutoReRollAfterBuy ~= nil then State.AutoReRollAfterBuy = s.AutoReRollAfterBuy end
+            if s.AutoFuserLoop ~= nil then State.AutoFuserLoop = s.AutoFuserLoop end
+            if s.FuserInterval ~= nil then State.FuserInterval = s.FuserInterval end
+            if s.AutoApplyGems ~= nil then State.AutoApplyGems = s.AutoApplyGems end
+            if s.AutoActivateBuff ~= nil then State.AutoActivateBuff = s.AutoActivateBuff end
             if s.WalkSpeedEnabled ~= nil then State.WalkSpeedEnabled = s.WalkSpeedEnabled end
             if s.WalkSpeedValue ~= nil then State.WalkSpeedValue = s.WalkSpeedValue end
             if s.JumpPowerEnabled ~= nil then State.JumpPowerEnabled = s.JumpPowerEnabled end
@@ -140,6 +147,18 @@ function ConfigManager.init(deps)
             if s.InfiniteJump ~= nil then State.InfiniteJump = s.InfiniteJump end
             if s.Noclip ~= nil then State.Noclip = s.Noclip end
             if s.AntiAFK ~= nil then State.AntiAFK = s.AntiAFK end
+
+            -- Đồng bộ UI Toggles nếu đã được tạo
+            local opt = Fluent and Fluent.Options
+            if opt then
+                pcall(function()
+                    if opt.ToggleAutoFarmMoney and s.AutoFarmMoney ~= nil then opt.ToggleAutoFarmMoney:SetValue(s.AutoFarmMoney) end
+                    if opt.ToggleAutoRollBuy and s.AutoRollBuyEnabled ~= nil then opt.ToggleAutoRollBuy:SetValue(s.AutoRollBuyEnabled) end
+                    if opt.ToggleAutoFuser and s.AutoFuserLoop ~= nil then opt.ToggleAutoFuser:SetValue(s.AutoFuserLoop) end
+                    if opt.ToggleAutoApplyGems and s.AutoApplyGems ~= nil then opt.ToggleAutoApplyGems:SetValue(s.AutoApplyGems) end
+                    if opt.ToggleAutoBuff1H and s.AutoActivateBuff ~= nil then opt.ToggleAutoBuff1H:SetValue(s.AutoActivateBuff) end
+                end)
+            end
         end
 
         local buyCount = 0

@@ -4,19 +4,13 @@
 ]]
 
 local State = {
-    -- Pro Farm Loop
-    ProFarmLoop = false,
-    AutoApplyGems = true,
-    AutoActivateBuff = true,
-    LastBuffActivated = 0,
-
-    -- Quy trình tiền (đào mỏ -> nung lò -> bán)
-    AutoMoneyPipeline = true,
+    -- 1. Auto Farm Tiền (Money Pipeline: CrateMaker -> Furnace -> Seller)
+    AutoFarmMoney = false,
     MoneyPipelineInterval = 12,
     MoneyStepDelay = 0.4,
     LastMoneyPipelineTime = 0,
 
-    -- Roll & Buy Target Ores
+    -- 2. Auto Roll & Mua Quặng (Auto Roller + Pedestals Scan)
     AutoRollBuyEnabled = false,
     RollScanDelay = 0.5,
     AutoBuyTargetOres = true,
@@ -24,12 +18,22 @@ local State = {
     AutoReRollAfterBuy = true,
     WantedBuyOres = {}, -- { ["Tên Quặng"] = true }
 
-    -- Smart Fuser
-    SmartFuser = true,
+    -- 3. Smart Fuser (Tự Động Nạp Quặng & Nhận Mega Ore)
+    AutoFuserLoop = false,
+    FuserInterval = 8,
     LastFuserRun = 0,
     AllowedFuseOres = {}, -- { ["Tên Quặng"] = true }
 
-    -- Movement & AFK
+    -- 4. Buffs & Gems (Apply Gems & Showcase Buff x2.75)
+    AutoApplyGems = false,
+    AutoActivateBuff = false,
+    LastBuffActivated = 0,
+    LastGemsApplied = 0,
+
+    -- Khóa điều phối (tránh xung đột khi bật nhiều tính năng cùng lúc)
+    isBusy = false,
+
+    -- 5. Movement & AFK
     WalkSpeedEnabled = false,
     WalkSpeedValue = 16,
     JumpPowerEnabled = false,

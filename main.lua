@@ -90,19 +90,13 @@ OresData.OreAliases = {
 ]]
 
 local State = {
-    -- Pro Farm Loop
-    ProFarmLoop = false,
-    AutoApplyGems = true,
-    AutoActivateBuff = true,
-    LastBuffActivated = 0,
-
-    -- Quy trình tiền (đào mỏ -> nung lò -> bán)
-    AutoMoneyPipeline = true,
+    -- 1. Auto Farm Tiền (Money Pipeline: CrateMaker -> Furnace -> Seller)
+    AutoFarmMoney = false,
     MoneyPipelineInterval = 12,
     MoneyStepDelay = 0.4,
     LastMoneyPipelineTime = 0,
 
-    -- Roll & Buy Target Ores
+    -- 2. Auto Roll & Mua Quặng (Auto Roller + Pedestals Scan)
     AutoRollBuyEnabled = false,
     RollScanDelay = 0.5,
     AutoBuyTargetOres = true,
@@ -110,12 +104,22 @@ local State = {
     AutoReRollAfterBuy = true,
     WantedBuyOres = {}, -- { ["Tên Quặng"] = true }
 
-    -- Smart Fuser
-    SmartFuser = true,
+    -- 3. Smart Fuser (Tự Động Nạp Quặng & Nhận Mega Ore)
+    AutoFuserLoop = false,
+    FuserInterval = 8,
     LastFuserRun = 0,
     AllowedFuseOres = {}, -- { ["Tên Quặng"] = true }
 
-    -- Movement & AFK
+    -- 4. Buffs & Gems (Apply Gems & Showcase Buff x2.75)
+    AutoApplyGems = false,
+    AutoActivateBuff = false,
+    LastBuffActivated = 0,
+    LastGemsApplied = 0,
+
+    -- Khóa điều phối (tránh xung đột khi bật nhiều tính năng cùng lúc)
+    isBusy = false,
+
+    -- 5. Movement & AFK
     WalkSpeedEnabled = false,
     WalkSpeedValue = 16,
     JumpPowerEnabled = false,
@@ -1343,14 +1347,17 @@ function ConfigManager.init(deps)
             WantedBuyOres = State.WantedBuyOres,
             AllowedFuseOres = State.AllowedFuseOres,
             Settings = {
-                AutoMoneyPipeline = State.AutoMoneyPipeline,
+                AutoFarmMoney = State.AutoFarmMoney,
                 MoneyPipelineInterval = State.MoneyPipelineInterval,
                 MoneyStepDelay = State.MoneyStepDelay,
+                AutoRollBuyEnabled = State.AutoRollBuyEnabled,
                 RollScanDelay = State.RollScanDelay,
-                AutoApplyGems = State.AutoApplyGems,
-                AutoActivateBuff = State.AutoActivateBuff,
                 BuyAllPedestals = State.BuyAllPedestals,
                 AutoReRollAfterBuy = State.AutoReRollAfterBuy,
+                AutoFuserLoop = State.AutoFuserLoop,
+                FuserInterval = State.FuserInterval,
+                AutoApplyGems = State.AutoApplyGems,
+                AutoActivateBuff = State.AutoActivateBuff,
                 WalkSpeedEnabled = State.WalkSpeedEnabled,
                 WalkSpeedValue = State.WalkSpeedValue,
                 JumpPowerEnabled = State.JumpPowerEnabled,
@@ -1441,14 +1448,18 @@ function ConfigManager.init(deps)
 
         if type(data.Settings) == "table" then
             local s = data.Settings
-            if s.AutoMoneyPipeline ~= nil then State.AutoMoneyPipeline = s.AutoMoneyPipeline end
+            if s.AutoFarmMoney ~= nil then State.AutoFarmMoney = s.AutoFarmMoney end
+            if s.AutoMoneyPipeline ~= nil and s.AutoFarmMoney == nil then State.AutoFarmMoney = s.AutoMoneyPipeline end
             if s.MoneyPipelineInterval ~= nil then State.MoneyPipelineInterval = s.MoneyPipelineInterval end
             if s.MoneyStepDelay ~= nil then State.MoneyStepDelay = s.MoneyStepDelay end
+            if s.AutoRollBuyEnabled ~= nil then State.AutoRollBuyEnabled = s.AutoRollBuyEnabled end
             if s.RollScanDelay ~= nil then State.RollScanDelay = s.RollScanDelay end
-            if s.AutoApplyGems ~= nil then State.AutoApplyGems = s.AutoApplyGems end
-            if s.AutoActivateBuff ~= nil then State.AutoActivateBuff = s.AutoActivateBuff end
             if s.BuyAllPedestals ~= nil then State.BuyAllPedestals = s.BuyAllPedestals end
             if s.AutoReRollAfterBuy ~= nil then State.AutoReRollAfterBuy = s.AutoReRollAfterBuy end
+            if s.AutoFuserLoop ~= nil then State.AutoFuserLoop = s.AutoFuserLoop end
+            if s.FuserInterval ~= nil then State.FuserInterval = s.FuserInterval end
+            if s.AutoApplyGems ~= nil then State.AutoApplyGems = s.AutoApplyGems end
+            if s.AutoActivateBuff ~= nil then State.AutoActivateBuff = s.AutoActivateBuff end
             if s.WalkSpeedEnabled ~= nil then State.WalkSpeedEnabled = s.WalkSpeedEnabled end
             if s.WalkSpeedValue ~= nil then State.WalkSpeedValue = s.WalkSpeedValue end
             if s.JumpPowerEnabled ~= nil then State.JumpPowerEnabled = s.JumpPowerEnabled end
@@ -1456,6 +1467,18 @@ function ConfigManager.init(deps)
             if s.InfiniteJump ~= nil then State.InfiniteJump = s.InfiniteJump end
             if s.Noclip ~= nil then State.Noclip = s.Noclip end
             if s.AntiAFK ~= nil then State.AntiAFK = s.AntiAFK end
+
+            -- Đồng bộ UI Toggles nếu đã được tạo
+            local opt = Fluent and Fluent.Options
+            if opt then
+                pcall(function()
+                    if opt.ToggleAutoFarmMoney and s.AutoFarmMoney ~= nil then opt.ToggleAutoFarmMoney:SetValue(s.AutoFarmMoney) end
+                    if opt.ToggleAutoRollBuy and s.AutoRollBuyEnabled ~= nil then opt.ToggleAutoRollBuy:SetValue(s.AutoRollBuyEnabled) end
+                    if opt.ToggleAutoFuser and s.AutoFuserLoop ~= nil then opt.ToggleAutoFuser:SetValue(s.AutoFuserLoop) end
+                    if opt.ToggleAutoApplyGems and s.AutoApplyGems ~= nil then opt.ToggleAutoApplyGems:SetValue(s.AutoApplyGems) end
+                    if opt.ToggleAutoBuff1H and s.AutoActivateBuff ~= nil then opt.ToggleAutoBuff1H:SetValue(s.AutoActivateBuff) end
+                end)
+            end
         end
 
         local buyCount = 0
@@ -1936,84 +1959,59 @@ function UI.init(deps)
         return refreshAllVisuals
     end
 
-    -- 4. KHỞI TẠO CÁC TAB
+    -- 4. KHỞI TẠO CÁC TAB ĐỘC LẬP TỪNG CHỨC NĂNG
     local Tabs = {
-        Farm = Window:AddTab({ Title = "⚡ Pro Farm", Icon = "zap" }),
-        RollBuy = Window:AddTab({ Title = "🎲 Roll & Mua Quặng", Icon = "gem" }),
+        Farm = Window:AddTab({ Title = "💰 Auto Farm Tiền", Icon = "coins" }),
+        RollBuy = Window:AddTab({ Title = "🎲 Auto Roll & Mua", Icon = "gem" }),
         Fuser = Window:AddTab({ Title = "🔥 Smart Fuser", Icon = "flame" }),
-        Teleport = Window:AddTab({ Title = "📍 Teleports", Icon = "map-pin" }),
+        Buffs = Window:AddTab({ Title = "⭐ Buff & Gems", Icon = "sparkles" }),
+        Teleport = Window:AddTab({ Title = "📍 Dịch Chuyển", Icon = "map-pin" }),
         Player = Window:AddTab({ Title = "🏃 Nhân Vật", Icon = "user" }),
         Settings = Window:AddTab({ Title = "⚙️ Cài Đặt", Icon = "settings" })
     }
 
     local Options = Fluent.Options
 
-    -- TAB 1: PRO FARM
+    ----------------------------------------------------------------------------
+    -- TAB 1: 💰 AUTO FARM TIỀN (MONEY PIPELINE)
+    ----------------------------------------------------------------------------
     Tabs.Farm:AddParagraph({
-        Title = "👑 CHẾ ĐỘ PRO FARM TỰ ĐỘNG KHÉP KÍN",
-        Content = "Apply Gems -> Giữ Auto Roll & Mua đúng quặng đã chọn trên 6 bục -> Smart Fuser -> Lò nung & Bán tiền mượt mà!"
+        Title = "💰 QUY TRÌNH KIẾM TIỀN TỰ ĐỘNG (ĐỘC LẬP)",
+        Content = "Tự động lấy thùng quặng từ CrateMaker -> Mang vào lò nung Furnace -> Đem thanh kim loại lên bàn Seller bán kiếm tiền liên tục!"
     })
 
-    local ToggleProFarm = Tabs.Farm:AddToggle("ToggleProFarm", {
-        Title = "🚀 BẬT PRO FARM TOÀN DIỆN (FULL AUTOMATION)",
+    local ToggleAutoFarmMoney = Tabs.Farm:AddToggle("ToggleAutoFarmMoney", {
+        Title = "🚀 BẬT TỰ ĐỘNG BÁN TIỀN (AUTO MONEY PIPELINE)",
         Default = false
     })
 
-    ToggleProFarm:OnChanged(function()
-        State.ProFarmLoop = Options.ToggleProFarm.Value
-        if State.ProFarmLoop then
+    ToggleAutoFarmMoney:OnChanged(function()
+        State.AutoFarmMoney = Options.ToggleAutoFarmMoney.Value
+        if State.AutoFarmMoney then
+            Fluent:Notify({ Title = "💰 Auto Farm Tiền", Content = "Đã BẬT quy trình bán tiền tự động!", Duration = 3 })
             task.spawn(function()
-                task.wait(0.2)
-                AutoRoll.triggerGameAutoRoll(false)
-            end)
-
-            task.spawn(function()
-                while State.ProFarmLoop do
-                    if State.AutoApplyGems and (tick() - (State.LastGemsApplied or 0) >= 15) then
-                        State.LastGemsApplied = tick()
-                        ShowcaseBuff.applyGems(false)
+                while State.AutoFarmMoney do
+                    if not State.isBusy then
+                        State.isBusy = true
+                        pcall(MoneyPipeline.run)
+                        State.isBusy = false
                     end
-
-                    if State.AutoActivateBuff and (tick() - State.LastBuffActivated > 15) then
-                        State.LastBuffActivated = tick()
-                        ShowcaseBuff.activateBuff(false)
-                    end
-
-                    if State.AutoBuyTargetOres then
-                        AutoRoll.checkAndBuyMatchingPedestals()
-                    end
-                    task.wait(0.2)
-
-                    if State.SmartFuser and (tick() - (State.LastFuserRun or 0) >= 7) then
-                        State.LastFuserRun = tick()
-                        SmartFuser.run()
-                    end
-                    task.wait(0.2)
-
-                    if State.AutoMoneyPipeline and (tick() - State.LastMoneyPipelineTime >= State.MoneyPipelineInterval) then
-                        State.LastMoneyPipelineTime = tick()
-                        MoneyPipeline.run()
-                    end
-
-                    task.wait(0.4)
+                    task.wait(State.MoneyPipelineInterval or 12)
                 end
             end)
+        else
+            Fluent:Notify({ Title = "💰 Auto Farm Tiền", Content = "Đã TẮT quy trình bán tiền.", Duration = 3 })
         end
     end)
 
     Tabs.Farm:AddParagraph({
-        Title = "⏱️ CÀI ĐẶT DELAY BÁN QUẶNG:",
-        Content = "Tùy chỉnh khoảng thời gian giữa các chu kỳ bán để nhân vật hoạt động mượt mà."
+        Title = "⏱️ CÀI ĐẶT TỐC ĐỘ BÁN TIỀN:",
+        Content = "Tùy chỉnh khoảng cách giữa các lần bán và độ trễ từng bước để không bị vấp."
     })
-
-    Tabs.Farm:AddToggle("ToggleAutoMoney", {
-        Title = "Tự Động Bán Kiếm Tiền (CrateMaker -> Furnace -> Sell)",
-        Default = true
-    }):OnChanged(function() State.AutoMoneyPipeline = Options.ToggleAutoMoney.Value end)
 
     Tabs.Farm:AddSlider("SliderMoneyInterval", {
         Title = "⏱️ Giãn Cách Chu Kỳ Bán (Giây)",
-        Default = 12,
+        Default = State.MoneyPipelineInterval or 12,
         Min = 5,
         Max = 60,
         Rounding = 0,
@@ -2022,25 +2020,15 @@ function UI.init(deps)
 
     Tabs.Farm:AddSlider("SliderMoneyStepDelay", {
         Title = "⏳ Độ Trễ Từng Bước Bán (Giây)",
-        Default = 0.4,
+        Default = State.MoneyStepDelay or 0.4,
         Min = 0.25,
         Max = 1.0,
         Rounding = 2,
         Callback = function(val) State.MoneyStepDelay = val end
     })
 
-    Tabs.Farm:AddToggle("ToggleGems", {
-        Title = "Tự Động Sử Dụng Apply Gems",
-        Default = true
-    }):OnChanged(function() State.AutoApplyGems = Options.ToggleGems.Value end)
-
-    Tabs.Farm:AddToggle("ToggleBuff1H", {
-        Title = "Tự Động Duy Trì Activate Ore Buff (Mỗi 1 Tiếng)",
-        Default = true
-    }):OnChanged(function() State.AutoActivateBuff = Options.ToggleBuff1H.Value end)
-
     Tabs.Farm:AddButton({
-        Title = "💰 Chạy Ngay Quy Trình Tiền (Lấy Mỏ -> Nung Lò -> Bán)",
+        Title = "💰 Chạy Thử 1 Vòng Bán Tiền Ngay (Manual Run)",
         Callback = function()
             local ok, msg = MoneyPipeline.run()
             Fluent:Notify({ Title = "Quy Trình Tiền", Content = msg or "Đã thực hiện xong một vòng kiếm tiền!", Duration = 4 })
@@ -2048,69 +2036,70 @@ function UI.init(deps)
     })
 
     Tabs.Farm:AddButton({
-        Title = "🔥 Chạy Ngay Smart Fuser (Cầm Quặng & Nạp Node)",
-        Callback = function()
-            local ok, msg = SmartFuser.run()
-            Fluent:Notify({ Title = "Smart Fuser", Content = msg or "Đã nạp quặng cho Fuser!", Duration = 4 })
-        end
+        Title = "💾 Lưu Cài Đặt Farm Tiền (Save Config)",
+        Callback = function() ConfigManager.save(false) end
     })
 
-    Tabs.Farm:AddButton({
-        Title = "⭐ Kiểm Tra / Đặt Lại Quặng Buff Showcase",
-        Callback = function()
-            local ok, msg = ShowcaseBuff.activateBuff(false)
-            Fluent:Notify({ Title = "Buff Showcase", Content = msg, Duration = 4 })
-        end
-    })
-
-    -- TAB 2: ROLL & MUA QUẶNG
+    ----------------------------------------------------------------------------
+    -- TAB 2: 🎲 AUTO ROLL & MUA QUẶNG
+    ----------------------------------------------------------------------------
     Tabs.RollBuy:AddParagraph({
-        Title = "🎲 CƠ CHẾ AUTO ROLL & QUÉT MUA QUẶNG TỰ ĐỘNG 100%",
-        Content = "• TỰ ĐỘNG HOÀN TOÀN: Khi bật toggle, script sẽ tự động kích hoạt Auto Roll của game và soi 6 bục.\n• KHÔNG CẦN BẬT TAY SAU KHI MUA: Mua quặng xong, script tự động kích hoạt lại Auto Roll của game ngay lập tức, AFK 24/7 không lo bị ngắt!"
+        Title = "🎲 CƠ CHẾ AUTO ROLL & QUÉT MUA QUẶNG TỰ ĐỘNG (ĐỘC LẬP)",
+        Content = "• Tự động kích hoạt cần gạt Auto Roll của game và soi liên tục 6 bục.\n• Khi thấy đúng quặng bạn chọn (hoặc bật Mua Tất Cả) -> bay tới mua ngay.\n• Sau khi mua, tự động bật lại cần gạt Auto Roll của game để tiếp tục AFK 24/7!"
     })
 
-    Tabs.RollBuy:AddToggle("ToggleAutoRollBuy", {
-        Title = "🚀 BẬT QUÉT & TỰ ĐỘNG MUA QUẶNG (THEO DANH SÁCH)",
+    local ToggleAutoRollBuy = Tabs.RollBuy:AddToggle("ToggleAutoRollBuy", {
+        Title = "🚀 BẬT AUTO ROLL & TỰ ĐỘNG MUA QUẶNG",
         Default = false
-    }):OnChanged(function()
+    })
+
+    ToggleAutoRollBuy:OnChanged(function()
         State.AutoRollBuyEnabled = Options.ToggleAutoRollBuy.Value
         if State.AutoRollBuyEnabled then
+            Fluent:Notify({ Title = "🎲 Auto Roll & Mua", Content = "Đã BẬT tự động Roll & Mua quặng!", Duration = 3 })
             task.spawn(function()
                 task.wait(0.2)
                 if State.AutoReRollAfterBuy then
-                    AutoRoll.triggerGameAutoRoll(false)
+                    if not State.isBusy then
+                        State.isBusy = true
+                        pcall(AutoRoll.triggerGameAutoRoll, false)
+                        State.isBusy = false
+                    end
                 end
 
                 while State.AutoRollBuyEnabled do
-                    AutoRoll.checkAndBuyMatchingPedestals()
+                    if not State.isBusy then
+                        pcall(AutoRoll.checkAndBuyMatchingPedestals)
+                    end
                     task.wait(State.RollScanDelay or 0.5)
                 end
             end)
+        else
+            Fluent:Notify({ Title = "🎲 Auto Roll & Mua", Content = "Đã TẮT tự động Roll & Mua quặng.", Duration = 3 })
         end
     end)
-
 
     Tabs.RollBuy:AddToggle("ToggleAutoReRoll", {
         Title = "🔄 Tự Động Kích Hoạt Lại Auto Roll Sau Khi Mua",
         Default = true
     }):OnChanged(function() State.AutoReRollAfterBuy = Options.ToggleAutoReRoll.Value end)
 
+    Tabs.RollBuy:AddToggle("ToggleBuyAll", {
+        Title = "Mua Tất Cả Quặng (Không Cần Chọn Lọc)",
+        Default = false
+    }):OnChanged(function() State.BuyAllPedestals = Options.ToggleBuyAll.Value end)
+
     Tabs.RollBuy:AddSlider("SliderRollScanDelay", {
         Title = "⏱️ Tần Suất Quét Bục Roll (Giây)",
-        Default = 0.5,
+        Default = State.RollScanDelay or 0.5,
         Min = 0.2,
         Max = 3.0,
         Rounding = 1,
         Callback = function(val) State.RollScanDelay = val end
     })
 
-    Tabs.RollBuy:AddToggle("ToggleBuyAll", {
-        Title = "Mua Tất Cả Quặng (Không Cần Chọn Lọc)",
-        Default = false
-    }):OnChanged(function() State.BuyAllPedestals = Options.ToggleBuyAll.Value end)
-
     Tabs.RollBuy:AddButton({
-        Title = "🎲 Bấm Bật / Tắt Auto Roll Của Game (1-Click)",
+        Title = "🎲 Gạt Cần Bật / Tắt Auto Roll Của Game (1-Click)",
         Callback = function()
             local ok, name = AutoRoll.triggerGameAutoRoll(true)
             if ok then
@@ -2142,7 +2131,55 @@ function UI.init(deps)
         Callback = function() ConfigManager.save(false) end
     })
 
-    -- TAB 3: SMART FUSER
+    ----------------------------------------------------------------------------
+    -- TAB 3: 🔥 SMART FUSER
+    ----------------------------------------------------------------------------
+    Tabs.Fuser:AddParagraph({
+        Title = "🔥 TỰ ĐỘNG NẠP & NHẬN THÀNH PHẨM FUSER (ĐỘC LẬP)",
+        Content = "• Tự động thu hoạch thành phẩm Mega Ore khi hoàn thành.\n• Tự động kiểm tra các node trống, cầm quặng trong danh sách cho phép và nạp vào.\n• Bảo vệ 100% quặng xịn trong túi đồ không bao giờ bị nung nhầm!"
+    })
+
+    local ToggleAutoFuser = Tabs.Fuser:AddToggle("ToggleAutoFuser", {
+        Title = "🚀 BẬT TỰ ĐỘNG SMART FUSER (AUTO FUSER)",
+        Default = false
+    })
+
+    ToggleAutoFuser:OnChanged(function()
+        State.AutoFuserLoop = Options.ToggleAutoFuser.Value
+        if State.AutoFuserLoop then
+            Fluent:Notify({ Title = "🔥 Smart Fuser", Content = "Đã BẬT tự động nạp & nhận quặng Fuser!", Duration = 3 })
+            task.spawn(function()
+                while State.AutoFuserLoop do
+                    if not State.isBusy then
+                        State.isBusy = true
+                        pcall(SmartFuser.run)
+                        State.isBusy = false
+                    end
+                    task.wait(State.FuserInterval or 8)
+                end
+            end)
+        else
+            Fluent:Notify({ Title = "🔥 Smart Fuser", Content = "Đã TẮT tự động Smart Fuser.", Duration = 3 })
+        end
+    end)
+
+    Tabs.Fuser:AddSlider("SliderFuserInterval", {
+        Title = "⏱️ Giãn Cách Kiểm Tra Fuser (Giây)",
+        Default = State.FuserInterval or 8,
+        Min = 4,
+        Max = 30,
+        Rounding = 0,
+        Callback = function(val) State.FuserInterval = val end
+    })
+
+    Tabs.Fuser:AddButton({
+        Title = "🔥 Cầm Quặng & Nạp Ngay Vào Các Node Trống (1 Lần)",
+        Callback = function()
+            local ok, msg = SmartFuser.run()
+            Fluent:Notify({ Title = "Smart Fuser", Content = msg or "Đã nạp quặng vào Fuser!", Duration = 4 })
+        end
+    })
+
     local refreshFuseSelectorVisuals = buildIntegratedOreSelector(
         Tabs.Fuser,
         "🔥 Bảng Chọn Quặng Cho Phép Nung Trong Fuser",
@@ -2152,19 +2189,86 @@ function UI.init(deps)
     )
 
     Tabs.Fuser:AddButton({
-        Title = "🔥 Cầm Quặng & Nạp Ngay Vào Các Node Trống",
-        Callback = function()
-            local ok, msg = SmartFuser.run()
-            Fluent:Notify({ Title = "Smart Fuser", Content = msg or "Đã nạp quặng vào Fuser!", Duration = 4 })
-        end
-    })
-
-    Tabs.Fuser:AddButton({
         Title = "💾 Lưu Danh Sách Quặng Nung & Cài Đặt (Save Config)",
         Callback = function() ConfigManager.save(false) end
     })
 
-    -- TAB 4: TELEPORTS
+    ----------------------------------------------------------------------------
+    -- TAB 4: ⭐ BUFF & GEMS
+    ----------------------------------------------------------------------------
+    Tabs.Buffs:AddParagraph({
+        Title = "⭐ TỰ ĐỘNG DUY TRÌ ORE BUFF SHOWCASE & APPLY GEMS",
+        Content = "• Showcase Buff: Tự động đặt quặng lên bục để duy trì hiệu ứng nhân x2.75 giá trị quặng 24/7.\n• Apply Gems: Tự động áp dụng ngọc tăng cường giá trị để tối đa hóa thu nhập."
+    })
+
+    local ToggleAutoApplyGems = Tabs.Buffs:AddToggle("ToggleAutoApplyGems", {
+        Title = "💎 Tự Động Sử Dụng Apply Gems (Mỗi 15 Giây)",
+        Default = false
+    })
+
+    ToggleAutoApplyGems:OnChanged(function()
+        State.AutoApplyGems = Options.ToggleAutoApplyGems.Value
+        if State.AutoApplyGems then
+            Fluent:Notify({ Title = "💎 Apply Gems", Content = "Đã BẬT tự động Apply Gems!", Duration = 3 })
+            task.spawn(function()
+                while State.AutoApplyGems do
+                    pcall(ShowcaseBuff.applyGems, true)
+                    task.wait(15)
+                end
+            end)
+        else
+            Fluent:Notify({ Title = "💎 Apply Gems", Content = "Đã TẮT tự động Apply Gems.", Duration = 3 })
+        end
+    end)
+
+    local ToggleAutoBuff1H = Tabs.Buffs:AddToggle("ToggleAutoBuff1H", {
+        Title = "⭐ Tự Động Duy Trì Buff Showcase x2.75 (Mỗi 30 Phút)",
+        Default = false
+    })
+
+    ToggleAutoBuff1H:OnChanged(function()
+        State.AutoActivateBuff = Options.ToggleAutoBuff1H.Value
+        if State.AutoActivateBuff then
+            Fluent:Notify({ Title = "⭐ Buff Showcase", Content = "Đã BẬT tự động duy trì Buff Showcase x2.75!", Duration = 3 })
+            task.spawn(function()
+                while State.AutoActivateBuff do
+                    if not State.isBusy then
+                        State.isBusy = true
+                        pcall(ShowcaseBuff.activateBuff, true)
+                        State.isBusy = false
+                    end
+                    task.wait(1800)
+                end
+            end)
+        else
+            Fluent:Notify({ Title = "⭐ Buff Showcase", Content = "Đã TẮT tự động duy trì Buff Showcase.", Duration = 3 })
+        end
+    end)
+
+    Tabs.Buffs:AddButton({
+        Title = "💎 Sử Dụng Apply Gems Ngay Lập Tức",
+        Callback = function()
+            local ok, msg = ShowcaseBuff.applyGems(false)
+            Fluent:Notify({ Title = "Apply Gems", Content = msg or "Đã thực hiện Apply Gems!", Duration = 4 })
+        end
+    })
+
+    Tabs.Buffs:AddButton({
+        Title = "⭐ Kiểm Tra / Đặt Lại Quặng Buff Showcase Ngay",
+        Callback = function()
+            local ok, msg = ShowcaseBuff.activateBuff(false)
+            Fluent:Notify({ Title = "Buff Showcase", Content = msg or "Đã kích hoạt Buff Showcase!", Duration = 4 })
+        end
+    })
+
+    Tabs.Buffs:AddButton({
+        Title = "💾 Lưu Cài Đặt Buff & Gems (Save Config)",
+        Callback = function() ConfigManager.save(false) end
+    })
+
+    ----------------------------------------------------------------------------
+    -- TAB 5: 📍 DỊCH CHUYỂN
+    ----------------------------------------------------------------------------
     Tabs.Teleport:AddParagraph({ Title = "📍 DỊCH CHUYỂN TRONG CĂN CỨ", Content = "Dịch chuyển tức thì đến các máy móc quan trọng." })
 
     Tabs.Teleport:AddButton({
