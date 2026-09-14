@@ -1,0 +1,5 @@
+# Roblox Script Configs & Temp files
+*.json
+*.log
+*.tmp
+__pycache__/
