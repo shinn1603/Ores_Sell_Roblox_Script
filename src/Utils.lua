@@ -11,15 +11,22 @@ local LocalPlayer = Players.LocalPlayer
 local Utils = {}
 local cachedMyBase = nil
 
-function Utils.getMyBase()
-    if cachedMyBase and cachedMyBase.Parent then
-        return cachedMyBase
-    end
+-- Lắng nghe sự kiện đổi Base từ Server khi người chơi Rejoin hoặc chuyển Server
+pcall(function()
+    LocalPlayer:GetAttributeChangedSignal("AssignedBaseName"):Connect(function()
+        local bName = LocalPlayer:GetAttribute("AssignedBaseName")
+        local bases = Workspace:FindFirstChild("Bases")
+        if bName and bases and bases:FindFirstChild(tostring(bName)) then
+            cachedMyBase = bases[tostring(bName)]
+        end
+    end)
+end)
 
+function Utils.getMyBase()
     local bases = Workspace:FindFirstChild("Bases")
     if not bases then return nil end
 
-    -- 1. ƯU TIÊN SỐ 1: Thuộc tính "AssignedBaseName" do game server cấp trực tiếp cho người chơi (Chuẩn 100%)
+    -- 1. ƯU TIÊN SỐ 1: Thuộc tính "AssignedBaseName" do game server cấp (tự động cập nhật 100% mỗi khi rejoin/đổi số base)
     for _, attr in ipairs({"AssignedBaseName", "Base", "BaseName", "CurrentBase", "MyBase"}) do
         local bName = LocalPlayer:GetAttribute(attr)
         if bName and bases:FindFirstChild(tostring(bName)) then
@@ -41,7 +48,12 @@ function Utils.getMyBase()
         end
     end
 
-    -- 3. Kiểm tra Owner hoặc Tên Base
+    -- 3. Sử dụng cache gần nhất nếu hợp lệ
+    if cachedMyBase and cachedMyBase.Parent == bases then
+        return cachedMyBase
+    end
+
+    -- 4. Kiểm tra Owner hoặc Tên Base
     for _, base in ipairs(bases:GetChildren()) do
         local owner = base:FindFirstChild("Owner") or base:FindFirstChild("Player")
         if (owner and tostring(owner.Value) == LocalPlayer.Name) or base.Name:find(LocalPlayer.Name) then
@@ -56,7 +68,7 @@ function Utils.getMyBase()
         end
     end
 
-    -- 4. Kiểm tra khoảng cách nhân vật tới base gần nhất
+    -- 5. Kiểm tra khoảng cách nhân vật tới base gần nhất (chỉ trong phạm vi hẹp < 60 studs)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if hrp then
@@ -66,7 +78,7 @@ function Utils.getMyBase()
             local p = b:FindFirstChildWhichIsA("BasePart", true)
             if p then
                 local d = (hrp.Position - p.Position).Magnitude
-                if d < minDist and d < 120 then
+                if d < minDist and d < 60 then
                     minDist = d
                     closest = b
                 end
@@ -78,25 +90,7 @@ function Utils.getMyBase()
         end
     end
 
-    -- 5. Quét bục có prompt Buy
-    for _, base in ipairs(bases:GetChildren()) do
-        local pedestals = base:FindFirstChild("OrePedestals")
-        if pedestals then
-            for _, p in ipairs(pedestals:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and (p.ActionText == "Buy" or p.ActionText:lower():find("buy")) then
-                    cachedMyBase = base
-                    return base
-                end
-            end
-        end
-    end
-
-    local fallback = bases:FindFirstChild("Base4") or bases:FindFirstChild("Base3") or bases:FindFirstChild("Base1")
-    if fallback then
-        cachedMyBase = fallback
-        return fallback
-    end
-
+    -- TUYỆT ĐỐI KHÔNG FALLBACK CỨNG VỀ Base4 ĐỂ TRÁNH NHẦM BASE CỦA NGƯỜI KHÁC KHI REJOIN
     return nil
 end
 

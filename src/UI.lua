@@ -690,22 +690,22 @@ function UI.init(deps)
     end)
 
     local ToggleAutoBuff1H = Tabs.Buffs:AddToggle("ToggleAutoBuff1H", {
-        Title = "⭐ Tự Động Duy Trì Buff Showcase x2.75 (Mỗi 30 Phút)",
+        Title = "⭐ Tự Động Duy Trì Buff Showcase x2.75 / x4",
         Default = false
     })
 
     ToggleAutoBuff1H:OnChanged(function()
         State.AutoActivateBuff = Options.ToggleAutoBuff1H.Value
         if State.AutoActivateBuff then
-            Fluent:Notify({ Title = "⭐ Buff Showcase", Content = "Đã BẬT tự động duy trì Buff Showcase x2.75!", Duration = 3 })
+            Fluent:Notify({ Title = "⭐ Buff Showcase", Content = "Đã BẬT tự động duy trì Buff Showcase!", Duration = 3 })
             task.spawn(function()
                 while State.AutoActivateBuff do
                     if not State.isBusy then
                         State.isBusy = true
-                        pcall(ShowcaseBuff.activateBuff, true)
+                        pcall(ShowcaseBuff.activateBuff, false)
                         State.isBusy = false
                     end
-                    task.wait(1800)
+                    task.wait(30) -- Kiểm tra mỗi 30s, khi sắp hết hạn sẽ tự động kích hoạt lại
                 end
             end)
         else
@@ -722,7 +722,7 @@ function UI.init(deps)
     })
 
     Tabs.Buffs:AddButton({
-        Title = "⭐ Kiểm Tra / Đặt Lại Quặng Buff Showcase Ngay",
+        Title = "⭐ Kiểm Tra / Kích Hoạt Buff Showcase Ngay",
         Callback = function()
             local ok, msg = ShowcaseBuff.activateBuff(false)
             Fluent:Notify({ Title = "Buff Showcase", Content = msg or "Đã kích hoạt Buff Showcase!", Duration = 4 })

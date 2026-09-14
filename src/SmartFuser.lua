@@ -14,7 +14,16 @@ function SmartFuser.init(deps)
 
     function SmartFuser.run()
         local base = Utils.getMyBase()
-        if not base or not base:FindFirstChild("Fuser") then return false, "Không tìm thấy Fuser trong căn cứ" end
+        if not base then
+            for _ = 1, 3 do
+                task.wait(0.5)
+                base = Utils.getMyBase()
+                if base then break end
+            end
+        end
+        if not base or not base:FindFirstChild("Fuser") then
+            return false, "Chưa tìm thấy Fuser trong căn cứ của bạn. Đang chờ đồng bộ..."
+        end
         local fuser = base.Fuser
         local char = LocalPlayer.Character
         if not char or not char:FindFirstChild("HumanoidRootPart") then return false, "Chưa tải nhân vật" end
@@ -25,8 +34,9 @@ function SmartFuser.init(deps)
         -- 1. Nếu có prompt 'Claim Fused Ore' -> Bay tới nhận ngay!
         for _, prompt in ipairs(fuser:GetDescendants()) do
             if prompt:IsA("ProximityPrompt") and prompt.Enabled and prompt.ActionText:lower():find("claim") then
-                if prompt.Parent and prompt.Parent:IsA("BasePart") then
-                    Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 2.0, 0))
+                local claimPart = (prompt.Parent and prompt.Parent:IsA("BasePart") and prompt.Parent) or prompt:FindFirstAncestorWhichIsA("BasePart")
+                if claimPart then
+                    Utils.teleportTo(claimPart.CFrame + Vector3.new(0, 2.0, 0))
                     task.wait(0.25)
                 end
                 Utils.firePrompt(prompt)
@@ -63,16 +73,16 @@ function SmartFuser.init(deps)
         local placedCount = 0
         for _, prompt in ipairs(emptyNodes) do
             -- RÀNG BUỘC: Kiểm tra túi đồ TRƯỚC KHI bay tới node!
-            -- Nếu đã hết quặng cho phép nung thì dừng ngay, không bay tới node tiếp theo để tránh việc thừa thãi!
             if not Utils.hasToolInWhitelist(State.AllowedFuseOres) then
                 break
             end
 
             -- Bước A: Teleport đến node TRƯỚC (chưa cầm gì cả!)
-            if prompt.Parent and prompt.Parent:IsA("BasePart") then
+            local nodePart = (prompt.Parent and prompt.Parent:IsA("BasePart") and prompt.Parent) or prompt:FindFirstAncestorWhichIsA("BasePart")
+            if nodePart then
                 Utils.unequipAllTools()
-                task.wait(0.1)
-                Utils.teleportTo(prompt.Parent.CFrame + Vector3.new(0, 2.0, 0))
+                task.wait(0.08)
+                Utils.teleportTo(nodePart.CFrame + Vector3.new(0, 1.8, 0))
                 task.wait(0.35)
             end
 
@@ -83,25 +93,18 @@ function SmartFuser.init(deps)
                 break
             end
 
-            local okEquip = Utils.equipToolToHand(tool)
-            if not okEquip then break end
             task.wait(0.25) -- Đợi game server xác nhận tool đã trên tay
 
             -- Bước C: Kích hoạt prompt để đặt quặng vào Fuser
             Utils.firePrompt(prompt)
             task.wait(0.4)
 
-            -- Bước D: Nếu tool vẫn còn trên tay (game chưa nhận) -> thử lại 2 lần nữa
-            for retry = 1, 2 do
-                if tool.Parent == char and prompt.Enabled then
-                    -- Equip lại tool (đề phòng bị drop)
-                    Utils.equipToolToHand(tool)
-                    task.wait(0.2)
-                    Utils.firePrompt(prompt)
-                    task.wait(0.35)
-                else
-                    break
-                end
+            -- Bước D: Nếu tool vẫn còn trên tay (game chưa nhận) -> thử lại 1 lần nữa
+            if tool.Parent == char and prompt.Enabled then
+                Utils.equipToolToHand(tool)
+                task.wait(0.15)
+                Utils.firePrompt(prompt)
+                task.wait(0.35)
             end
 
             placedCount = placedCount + 1
