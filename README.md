@@ -7,11 +7,13 @@ Script Hub hiện đại, mượt mà và tự động hóa toàn diện nhất 
 
 ---
 
-## 🚀 Cách Sử Dụng (Chỉ 1 Dòng Lệnh)
+## 🚀 Cách Sử Dụng (Chỉ 1 Dòng Lệnh - Tự Động Cập Nhật Vĩnh Viễn)
 
 ```lua
-loadstring(game:HttpGet("https://dpaste.com/7BGB5UP77.txt"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/shinn1603/Ores_Sell_Roblox_Script/main/main.lua"))()
 ```
+
+*(Link dự phòng: `loadstring(game:HttpGet("https://dpaste.com/7BGB5UP77.txt"))()`)*
 
 ---
 
