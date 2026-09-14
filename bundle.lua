@@ -447,6 +447,165 @@ function Utils.clearBlurAndDimmer()
     end)
 end
 
+-- Chuyển đổi chuỗi tiền ($1,500, 50k, 2.5M, 10B, 1.2T, etc.) sang số thực
+function Utils.parseMoneyString(str)
+    if not str then return nil end
+    local clean = tostring(str):gsub(",", ""):gsub("%$", ""):gsub("%s+", ""):lower()
+    local numStr, suffix = clean:match("^([%d%.]+)([kmbtq]?)$")
+    if not numStr then
+        numStr = clean:match("([%d%.]+)")
+    end
+    local num = tonumber(numStr)
+    if not num then return nil end
+
+    if suffix == "k" then
+        num = num * 1e3
+    elseif suffix == "m" then
+        num = num * 1e6
+    elseif suffix == "b" then
+        num = num * 1e9
+    elseif suffix == "t" then
+        num = num * 1e12
+    elseif suffix == "q" then
+        num = num * 1e15
+    end
+
+    return num
+end
+
+-- Lấy số tiền hiện tại của người chơi từ leaderstats, Attributes hoặc PlayerGui
+function Utils.getPlayerMoney()
+    local lp = LocalPlayer or game:GetService("Players").LocalPlayer
+    if not lp then return nil end
+
+    -- 1. leaderstats
+    local leaderstats = lp:FindFirstChild("leaderstats")
+    if leaderstats then
+        for _, name in ipairs({"Cash", "Money", "Coins", "Gold", "Balance", "Dollar", "OreCoins"}) do
+            local valObj = leaderstats:FindFirstChild(name)
+            if valObj and valObj:IsA("ValueBase") then
+                if type(valObj.Value) == "number" then
+                    return valObj.Value
+                elseif type(valObj.Value) == "string" then
+                    local parsed = Utils.parseMoneyString(valObj.Value)
+                    if parsed then return parsed end
+                end
+            end
+        end
+        for _, child in ipairs(leaderstats:GetChildren()) do
+            if (child:IsA("NumberValue") or child:IsA("IntValue")) and child.Name:lower():find("gem") == nil then
+                return child.Value
+            end
+        end
+    end
+
+    -- 2. Attributes
+    for _, attr in ipairs({"Cash", "Money", "Coins", "Balance", "Gold"}) do
+        local val = lp:GetAttribute(attr)
+        if type(val) == "number" then
+            return val
+        elseif type(val) == "string" then
+            local parsed = Utils.parseMoneyString(val)
+            if parsed then return parsed end
+        end
+    end
+
+    -- 3. PlayerData / Stats folder
+    for _, folderName in ipairs({"PlayerData", "Data", "Stats", "Currencies"}) do
+        local folder = lp:FindFirstChild(folderName)
+        if folder then
+            for _, name in ipairs({"Cash", "Money", "Coins", "Balance"}) do
+                local v = folder:FindFirstChild(name)
+                if v and v:IsA("ValueBase") and type(v.Value) == "number" then
+                    return v.Value
+                end
+            end
+        end
+    end
+
+    -- 4. PlayerGui (HUD Labels có ký tự $)
+    local pg = lp:FindFirstChild("PlayerGui")
+    if pg then
+        for _, label in ipairs(pg:GetDescendants()) do
+            if label:IsA("TextLabel") and label.Visible and label.Text:find("%$") then
+                local parsed = Utils.parseMoneyString(label.Text)
+                if parsed and parsed > 0 then
+                    return parsed
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+-- Định dạng số hiển thị rút gọn ($1.5M, $50K, v.v.)
+function Utils.formatNumber(num)
+    if not num then return "0" end
+    num = tonumber(num) or 0
+    if num >= 1e15 then
+        return string.format("%.2fQ", num / 1e15)
+    elseif num >= 1e12 then
+        return string.format("%.2fT", num / 1e12)
+    elseif num >= 1e9 then
+        return string.format("%.2fB", num / 1e9)
+    elseif num >= 1e6 then
+        return string.format("%.2fM", num / 1e6)
+    elseif num >= 1e3 then
+        return string.format("%.2fK", num / 1e3)
+    else
+        return tostring(math.floor(num))
+    end
+end
+
+-- Lấy số Gems hiện tại của người chơi
+function Utils.getPlayerGems()
+    local lp = LocalPlayer or game:GetService("Players").LocalPlayer
+    if not lp then return nil end
+
+    -- 1. leaderstats
+    local leaderstats = lp:FindFirstChild("leaderstats")
+    if leaderstats then
+        for _, name in ipairs({"Gems", "Gem", "Diamonds", "Diamond"}) do
+            local valObj = leaderstats:FindFirstChild(name)
+            if valObj and valObj:IsA("ValueBase") then
+                if type(valObj.Value) == "number" then
+                    return valObj.Value
+                elseif type(valObj.Value) == "string" then
+                    local parsed = Utils.parseMoneyString(valObj.Value)
+                    if parsed then return parsed end
+                end
+            end
+        end
+    end
+
+    -- 2. Attributes
+    for _, attr in ipairs({"Gems", "Gem", "Diamonds", "Diamond"}) do
+        local val = lp:GetAttribute(attr)
+        if type(val) == "number" then
+            return val
+        elseif type(val) == "string" then
+            local parsed = Utils.parseMoneyString(val)
+            if parsed then return parsed end
+        end
+    end
+
+    -- 3. PlayerData / Stats folder
+    for _, folderName in ipairs({"PlayerData", "Data", "Stats", "Currencies"}) do
+        local folder = lp:FindFirstChild(folderName)
+        if folder then
+            for _, name in ipairs({"Gems", "Gem", "Diamonds"}) do
+                local v = folder:FindFirstChild(name)
+                if v and v:IsA("ValueBase") and type(v.Value) == "number" then
+                    return v.Value
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
 
 --------------------------------------------------------------------------------
 -- MODULE: AutoRoll.lua
@@ -471,6 +630,8 @@ function AutoRoll.init(deps)
     local Fluent = deps.Fluent
 
     local recentlyBought = {}
+    local lastMoneyWarnTime = {}
+    local lastTriggerRollTime = 0
 
     -- 1. Tìm ProximityPrompt của cần gạt Auto Roller trong Base
     function AutoRoll.getAutoRollerPrompt()
@@ -714,6 +875,21 @@ function AutoRoll.init(deps)
 
     -- 4. Kích hoạt Auto Roll của game (Thao tác gạt cần Auto Roller thực tế trong Base)
     function AutoRoll.triggerGameAutoRoll(force)
+        local now = tick()
+        if not force and (now - lastTriggerRollTime < 3.5) then
+            return false, "Thao tác gạt cần quá nhanh, đang chờ cooldown"
+        end
+
+        -- RÀNG BUỘC: Nếu trên bục đang có quặng trúng mục tiêu nhưng chưa mua được (ví dụ do đang tích lũy tiền),
+        -- TUYỆT ĐỐI KHÔNG GẠT CẦN ROLL LẠI vì sẽ làm mất quặng quý!
+        if not force then
+            local hasPending, pendingOre, pedIdx = AutoRoll.hasPendingWantedOreOnPedestals()
+            if hasPending then
+                return false, string.format("Bục %d đang có %s chờ mua, tạm dừng roll để bảo vệ quặng!", pedIdx, pendingOre)
+            end
+        end
+        lastTriggerRollTime = now
+
         local leverPrompt = AutoRoll.getAutoRollerPrompt()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -845,6 +1021,88 @@ function AutoRoll.init(deps)
         return false
     end
 
+    -- Lấy giá mua của quặng trên bục quay
+    function AutoRoll.getPedestalPrice(pedestal, buyPrompt)
+        if not pedestal then return nil end
+
+        -- 1. Kiểm tra text trên buyPrompt (ActionText: "Buy ($50,000)", ObjectText, v.v.)
+        if buyPrompt then
+            if buyPrompt.ActionText and buyPrompt.ActionText ~= "" then
+                local p = Utils.parseMoneyString(buyPrompt.ActionText)
+                if p and p > 0 then return p end
+            end
+            if buyPrompt.ObjectText and buyPrompt.ObjectText ~= "" then
+                local p = Utils.parseMoneyString(buyPrompt.ObjectText)
+                if p and p > 0 then return p end
+            end
+        end
+
+        -- 2. Kiểm tra Attributes trên bục hoặc prompt
+        for _, obj in ipairs({pedestal, buyPrompt, pedestal:FindFirstChild("LocalRollingOreDisplay")}) do
+            if obj then
+                for _, attr in ipairs({"Price", "Cost", "PriceNumber", "OrePrice", "Value", "Amount"}) do
+                    local val = obj:GetAttribute(attr)
+                    if type(val) == "number" and val > 0 then
+                        return val
+                    elseif type(val) == "string" then
+                        local p = Utils.parseMoneyString(val)
+                        if p and p > 0 then return p end
+                    end
+                end
+            end
+        end
+
+        -- 3. Kiểm tra ValueObject con
+        for _, name in ipairs({"Price", "Cost", "PriceValue", "Value"}) do
+            local vo = pedestal:FindFirstChild(name)
+            if vo and vo:IsA("ValueBase") then
+                if type(vo.Value) == "number" and vo.Value > 0 then
+                    return vo.Value
+                elseif type(vo.Value) == "string" then
+                    local p = Utils.parseMoneyString(vo.Value)
+                    if p and p > 0 then return p end
+                end
+            end
+        end
+
+        -- 4. Kiểm tra TextLabel con (BillboardGui chứa ký tự $ hoặc chữ Cost/Price)
+        for _, desc in ipairs(pedestal:GetDescendants()) do
+            if desc:IsA("TextLabel") and desc.Visible and desc.Text ~= "" then
+                local txt = desc.Text
+                if txt:find("%$") or txt:lower():find("cost") or txt:lower():find("price") then
+                    local p = Utils.parseMoneyString(txt)
+                    if p and p > 0 then return p end
+                end
+            end
+        end
+
+        return nil
+    end
+
+    -- Kiểm tra xem hiện có quặng mục tiêu nào trên 6 bục đang chờ mua (chưa mua được vì thiếu tiền)
+    function AutoRoll.hasPendingWantedOreOnPedestals()
+        local base = Utils.getMyBase()
+        if not base or not base:FindFirstChild("OrePedestals") then return false end
+
+        for i = 1, 6 do
+            local pedestal = base.OrePedestals:FindFirstChild("RolledOrePedestal" .. i)
+            if pedestal then
+                local oreName = AutoRoll.getOreNameFromPedestal(pedestal)
+                if AutoRoll.isOreWanted(oreName) then
+                    for _, p in ipairs(pedestal:GetDescendants()) do
+                        if p:IsA("ProximityPrompt") and p.Enabled then
+                            local act = p.ActionText:lower()
+                            if (act:find("buy") or act:find("claim") or act:find("take") or act == "") and not act:find("place") then
+                                return true, oreName, i
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return false
+    end
+
     -- 6. Quét & Mua quặng trên 6 bục (và tự động bật lại Auto Roll sau khi mua xong)
     function AutoRoll.checkAndBuyMatchingPedestals()
         local base = Utils.getMyBase()
@@ -855,6 +1113,7 @@ function AutoRoll.init(deps)
         local originCF = root and root.CFrame
 
         local boughtCount = 0
+        local hasWaitingForMoney = false
         local now = tick()
 
         for i = 1, 6 do
@@ -875,19 +1134,37 @@ function AutoRoll.init(deps)
                     if not recentlyBought[i] or (now - recentlyBought[i] > 1.5) then
                         local oreName = AutoRoll.getOreNameFromPedestal(pedestal)
                         if AutoRoll.isOreWanted(oreName) then
-                            recentlyBought[i] = now
-                            if buyPrompt.Parent and buyPrompt.Parent:IsA("BasePart") then
-                                Utils.teleportTo(buyPrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
-                                task.wait(0.08)
+                            -- RÀNG BUỘC: Kiểm tra số tiền hiện tại trước khi bay tới mua
+                            local orePrice = AutoRoll.getPedestalPrice(pedestal, buyPrompt)
+                            local playerMoney = Utils.getPlayerMoney()
+
+                            if playerMoney and orePrice and playerMoney < orePrice then
+                                -- Chưa đủ tiền: KHÔNG bay tới, KHÔNG bấm prompt, đợi đủ hẳn mua!
+                                hasWaitingForMoney = true
+                                if not lastMoneyWarnTime[i] or (now - lastMoneyWarnTime[i] > 10) then
+                                    lastMoneyWarnTime[i] = now
+                                    Fluent:Notify({
+                                        Title = "⏳ CHƯA ĐỦ TIỀN MUA",
+                                        Content = string.format("Bục %d: %s (Cần: $%s | Có: $%s). Đang đợi tích lũy đủ tiền...", i, oreName, Utils.formatNumber(orePrice), Utils.formatNumber(playerMoney)),
+                                        Duration = 4
+                                    })
+                                end
+                            else
+                                -- Đủ tiền (hoặc không giới hạn): Tiến hành mua ngay
+                                recentlyBought[i] = now
+                                if buyPrompt.Parent and buyPrompt.Parent:IsA("BasePart") then
+                                    Utils.teleportTo(buyPrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
+                                    task.wait(0.08)
+                                end
+                                Utils.firePrompt(buyPrompt)
+                                task.wait(0.12)
+                                boughtCount = boughtCount + 1
+                                Fluent:Notify({
+                                    Title = "💎 ĐÃ MUA QUẶNG!",
+                                    Content = string.format("Bục %d: %s%s", i, oreName, orePrice and (" ($" .. Utils.formatNumber(orePrice) .. ")") or ""),
+                                    Duration = 3
+                                })
                             end
-                            Utils.firePrompt(buyPrompt)
-                            task.wait(0.12)
-                            boughtCount = boughtCount + 1
-                            Fluent:Notify({
-                                Title = "💎 ĐÃ MUA QUẶNG!",
-                                Content = string.format("Bục %d: %s", i, oreName),
-                                Duration = 3
-                            })
                         end
                     end
                 end
@@ -899,9 +1176,10 @@ function AutoRoll.init(deps)
             if originCF then
                 Utils.teleportTo(originCF)
             end
-            if State.AutoReRollAfterBuy then
+            -- Chỉ kích hoạt Roll lại khi KHÔNG còn bục nào đang giữ quặng quý chờ đủ tiền
+            if State.AutoReRollAfterBuy and not hasWaitingForMoney then
                 task.wait(0.4)
-                local ok = AutoRoll.triggerGameAutoRoll(false)
+                local ok, msg = AutoRoll.triggerGameAutoRoll(false)
                 if ok then
                     Fluent:Notify({
                         Title = "🔄 TIẾP TỤC AUTO ROLL",
@@ -984,6 +1262,12 @@ function SmartFuser.init(deps)
         -- 4. Nạp quặng vào từng node trống (TELEPORT TRƯỚC → CẦM QUẶNG → BẤM PLACE)
         local placedCount = 0
         for _, prompt in ipairs(emptyNodes) do
+            -- RÀNG BUỘC: Kiểm tra túi đồ TRƯỚC KHI bay tới node!
+            -- Nếu đã hết quặng cho phép nung thì dừng ngay, không bay tới node tiếp theo để tránh việc thừa thãi!
+            if not Utils.hasToolInWhitelist(State.AllowedFuseOres) then
+                break
+            end
+
             -- Bước A: Teleport đến node TRƯỚC (chưa cầm gì cả!)
             if prompt.Parent and prompt.Parent:IsA("BasePart") then
                 Utils.unequipAllTools()
@@ -1026,8 +1310,8 @@ function SmartFuser.init(deps)
         -- Cất toàn bộ tool vào túi, không cầm trên tay
         Utils.unequipAllTools()
 
-        -- QUAY LẠI VỊ TRÍ ĐỨNG BAN ĐẦU (Không đứng ngơ ngác ở Fuser!)
-        if originCF then
+        -- QUAY LẠI VỊ TRÍ ĐỨNG BAN ĐẦU (Nếu đã di chuyển nạp quặng)
+        if placedCount > 0 and originCF then
             Utils.teleportTo(originCF)
         end
 
@@ -1074,25 +1358,78 @@ function MoneyPipeline.init(deps)
         return nil
     end
 
+    local function isRefinedTool(tool)
+        if not tool then return false end
+        local n = tool.Name:lower()
+        return n:find("metal") or n:find("bar") or n:find("refined") or n:find("ingot")
+    end
+
+    local function isRawCrateTool(tool)
+        if not tool then return false end
+        local n = tool.Name:lower()
+        return (n:find("crate") or n:find("raw") or n:find("ore") or n:find("box")) and not isRefinedTool(tool)
+    end
+
     function MoneyPipeline.run()
         local base = Utils.getMyBase()
         if not base then return false, "Không tìm thấy căn cứ" end
 
         local char = LocalPlayer.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return false, "Chưa tải nhân vật" end
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return false, "Chưa tải nhân vật" end
 
         local cm = base:FindFirstChild("CrateMaker")
         local furnace = base:FindFirstChild("Furnace")
         local st = base:FindFirstChild("SellerTable")
 
         local stepDelay = math.clamp(State.MoneyStepDelay or 0.4, 0.25, 1.0)
-        local prevCF = char.HumanoidRootPart.CFrame
+        local prevCF = root.CFrame
+
+        -- Hàm phụ trợ bán hàng tại SellerTable
+        local function sellAtSellerTable()
+            local metalTool = findPipelineTool()
+            if metalTool then Utils.equipToolToHand(metalTool) end
+            task.wait(0.15)
+
+            local sellPrompt = nil
+            if st then
+                for _, p in ipairs(st:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") and p.Enabled then
+                        local act = p.ActionText:lower()
+                        if act:find("sell") or act:find("bán") or act == "" then
+                            sellPrompt = p
+                            break
+                        end
+                    end
+                end
+            end
+
+            if sellPrompt and sellPrompt.Parent and sellPrompt.Parent:IsA("BasePart") then
+                Utils.teleportTo(sellPrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
+                task.wait(stepDelay)
+                if metalTool and metalTool.Parent ~= char then Utils.equipToolToHand(metalTool) end
+                task.wait(0.1)
+                Utils.firePrompt(sellPrompt)
+                task.wait(stepDelay)
+            end
+
+            Utils.unequipAllTools()
+            if prevCF then Utils.teleportTo(prevCF) end
+            return true, "Đã bán thành công kim loại tại SellerTable!"
+        end
+
+        -- RÀNG BUỘC 1: Nếu người chơi ĐÃ CÓ SẴN thùng kim loại thành phẩm trên người
+        -- -> Bay thẳng tới SellerTable bán luôn, không đi đâu vòng vo!
+        local initialTool = findPipelineTool()
+        if initialTool and isRefinedTool(initialTool) then
+            return sellAtSellerTable()
+        end
 
         -- BƯỚC 0: KIỂM TRA XEM LÒ NUNG ĐÃ CÓ SẴN THÙNG KIM LOẠI NUNG XONG CHƯA
         local readyMetalPrompt = nil
         if furnace and furnace:FindFirstChild("MetalCratePlacementPart") then
             for _, p in ipairs(furnace.MetalCratePlacementPart:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.ActionText == "Pick up" and p.Enabled then
+                if p:IsA("ProximityPrompt") and p.ActionText:find("Pick up") and p.Enabled then
                     readyMetalPrompt = p
                     break
                 end
@@ -1104,8 +1441,15 @@ function MoneyPipeline.init(deps)
             task.wait(stepDelay)
             Utils.firePrompt(readyMetalPrompt)
             task.wait(stepDelay + 0.1)
-        else
-            -- BƯỚC 1: Thu hoạch thùng quặng thô từ CrateMaker
+            return sellAtSellerTable()
+        end
+
+        -- RÀNG BUỘC 2: Nếu chưa có kim loại nung sẵn, nhưng người chơi ĐÃ CÓ SẴN thùng quặng thô trên người
+        -- -> Bỏ qua CrateMaker, bay thẳng tới Lò Nung bỏ vào!
+        local hasRawCrate = initialTool and isRawCrateTool(initialTool)
+
+        if not hasRawCrate then
+            -- Kiểm tra CrateMaker xem có thùng mới chưa TRƯỚC KHI bay tới!
             local pickOrePrompt = nil
             if cm and cm:FindFirstChild("CrateSpawnPoint") then
                 for _, p in ipairs(cm.CrateSpawnPoint:GetDescendants()) do
@@ -1116,99 +1460,69 @@ function MoneyPipeline.init(deps)
                 end
             end
 
+            -- RÀNG BUỘC 3: Nếu mỏ chưa ra thùng mới và lò cũng chưa có kim loại
+            -- -> KHÔNG bay đi đâu cả, giữ nguyên vị trí, tránh làm việc thừa thãi!
             if not pickOrePrompt then
                 return false, "Mỏ đang đào quặng, chưa có thùng mới"
             end
 
+            -- Có thùng: Bay lại nhặt
             Utils.teleportTo(cm.CrateSpawnPoint.CFrame + Vector3.new(0, 1.5, 0))
             task.wait(stepDelay)
             Utils.firePrompt(pickOrePrompt)
             task.wait(stepDelay + 0.15)
+        end
 
-            -- BƯỚC 2: Bỏ vào lò nung Furnace ('Place ORES')
-            local placePrompt = nil
-            if furnace and furnace:FindFirstChild("PlaceCratesPromptPart") then
-                for _, p in ipairs(furnace.PlaceCratesPromptPart:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and p.ActionText:find("Place") and p.Enabled then
-                        placePrompt = p
+        -- BƯỚC 2: Bỏ vào lò nung Furnace ('Place ORES')
+        local placePrompt = nil
+        if furnace and furnace:FindFirstChild("PlaceCratesPromptPart") then
+            for _, p in ipairs(furnace.PlaceCratesPromptPart:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.ActionText:find("Place") and p.Enabled then
+                    placePrompt = p
+                    break
+                end
+            end
+        end
+
+        if placePrompt then
+            Utils.teleportTo(furnace.PlaceCratesPromptPart.CFrame + Vector3.new(0, 1.5, 0))
+            task.wait(stepDelay)
+
+            local crateTool = findPipelineTool()
+            if crateTool then Utils.equipToolToHand(crateTool) end
+            task.wait(0.12)
+
+            Utils.firePrompt(placePrompt)
+            task.wait(stepDelay + 0.2)
+        end
+
+        -- BƯỚC 3: Chờ lò nung luyện quặng xong
+        local metalPrompt = nil
+        local waitSmeltStart = tick()
+        while tick() - waitSmeltStart < 6.5 do
+            if furnace and furnace:FindFirstChild("MetalCratePlacementPart") then
+                for _, p in ipairs(furnace.MetalCratePlacementPart:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") and p.ActionText:find("Pick up") and p.Enabled then
+                        metalPrompt = p
                         break
                     end
                 end
             end
-
-            if placePrompt then
-                Utils.teleportTo(furnace.PlaceCratesPromptPart.CFrame + Vector3.new(0, 1.5, 0))
-                task.wait(stepDelay)
-
-                local crateTool = findPipelineTool()
-                if crateTool then Utils.equipToolToHand(crateTool) end
-                task.wait(0.12)
-
-                Utils.firePrompt(placePrompt)
-                task.wait(stepDelay + 0.2)
-            end
-
-            -- BƯỚC 3: Chờ lò nung luyện quặng xong
-            local metalPrompt = nil
-            local waitSmeltStart = tick()
-            while tick() - waitSmeltStart < 6.5 do
-                if furnace and furnace:FindFirstChild("MetalCratePlacementPart") then
-                    for _, p in ipairs(furnace.MetalCratePlacementPart:GetDescendants()) do
-                        if p:IsA("ProximityPrompt") and p.ActionText == "Pick up" and p.Enabled then
-                            metalPrompt = p
-                            break
-                        end
-                    end
-                end
-                if metalPrompt then break end
-                task.wait(0.3)
-            end
-
-            if metalPrompt then
-                Utils.teleportTo(furnace.MetalCratePlacementPart.CFrame + Vector3.new(0, 1.5, 0))
-                task.wait(stepDelay)
-                Utils.firePrompt(metalPrompt)
-                task.wait(stepDelay + 0.15)
-            else
-                Utils.unequipAllTools()
-                if prevCF then Utils.teleportTo(prevCF) end
-                return false, "Lò nung đang nung, chưa xong thùng thành phẩm"
-            end
+            if metalPrompt then break end
+            task.wait(0.3)
         end
 
-        -- BƯỚC 4: Cầm chắc thùng trên tay và đem bán tại SellerTable
-        local metalTool = findPipelineTool()
-        if metalTool then Utils.equipToolToHand(metalTool) end
-        task.wait(0.15)
-
-        local sellPrompt = nil
-        if st then
-            for _, p in ipairs(st:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.Enabled then
-                    local act = p.ActionText:lower()
-                    if act:find("sell") or act:find("bán") or act == "" then
-                        sellPrompt = p
-                        break
-                    end
-                end
-            end
-        end
-
-        if sellPrompt and sellPrompt.Parent and sellPrompt.Parent:IsA("BasePart") then
-            Utils.teleportTo(sellPrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
+        if metalPrompt then
+            Utils.teleportTo(furnace.MetalCratePlacementPart.CFrame + Vector3.new(0, 1.5, 0))
             task.wait(stepDelay)
-            if metalTool and metalTool.Parent ~= char then Utils.equipToolToHand(metalTool) end
-            task.wait(0.1)
-            Utils.firePrompt(sellPrompt)
-            task.wait(stepDelay)
+            Utils.firePrompt(metalPrompt)
+            task.wait(stepDelay + 0.15)
+            return sellAtSellerTable()
+        else
+            Utils.unequipAllTools()
+            if prevCF then Utils.teleportTo(prevCF) end
+            return false, "Lò nung đang nung, chưa xong thùng thành phẩm"
         end
-
-        -- Cất tool vào túi sau khi bán xong
-        Utils.unequipAllTools()
-
-        -- Quay lại vị trí đứng cũ
-        Utils.teleportTo(prevCF)
-        return true, "Đã hoàn thành một chu kỳ bán quặng kiếm tiền!"
     end
 end
 
@@ -1231,9 +1545,16 @@ local ShowcaseBuff = {}
 
 function ShowcaseBuff.init(deps)
     local Utils = deps.Utils
+    local Fluent = deps.Fluent
 
     -- 1. Tự động Apply Gems
     function ShowcaseBuff.applyGems(silent)
+        -- RÀNG BUỘC: Kiểm tra số Gems hiện có
+        local gems = Utils.getPlayerGems()
+        if gems ~= nil and gems <= 0 then
+            return false, "Không có Gems để Apply (Gems = 0)"
+        end
+
         local success = false
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if remotes then
@@ -2090,7 +2411,9 @@ function UI.init(deps)
 
                 while State.AutoRollBuyEnabled do
                     if not State.isBusy then
+                        State.isBusy = true
                         pcall(AutoRoll.checkAndBuyMatchingPedestals)
+                        State.isBusy = false
                     end
                     task.wait(State.RollScanDelay or 0.5)
                 end

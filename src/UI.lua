@@ -545,7 +545,9 @@ function UI.init(deps)
 
                 while State.AutoRollBuyEnabled do
                     if not State.isBusy then
+                        State.isBusy = true
                         pcall(AutoRoll.checkAndBuyMatchingPedestals)
+                        State.isBusy = false
                     end
                     task.wait(State.RollScanDelay or 0.5)
                 end

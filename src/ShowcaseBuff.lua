@@ -13,9 +13,16 @@ local ShowcaseBuff = {}
 
 function ShowcaseBuff.init(deps)
     local Utils = deps.Utils
+    local Fluent = deps.Fluent
 
     -- 1. Tự động Apply Gems
     function ShowcaseBuff.applyGems(silent)
+        -- RÀNG BUỘC: Kiểm tra số Gems hiện có
+        local gems = Utils.getPlayerGems()
+        if gems ~= nil and gems <= 0 then
+            return false, "Không có Gems để Apply (Gems = 0)"
+        end
+
         local success = false
         local remotes = ReplicatedStorage:FindFirstChild("Remotes")
         if remotes then

@@ -18,6 +18,8 @@ function AutoRoll.init(deps)
     local Fluent = deps.Fluent
 
     local recentlyBought = {}
+    local lastMoneyWarnTime = {}
+    local lastTriggerRollTime = 0
 
     -- 1. Tìm ProximityPrompt của cần gạt Auto Roller trong Base
     function AutoRoll.getAutoRollerPrompt()
@@ -261,6 +263,21 @@ function AutoRoll.init(deps)
 
     -- 4. Kích hoạt Auto Roll của game (Thao tác gạt cần Auto Roller thực tế trong Base)
     function AutoRoll.triggerGameAutoRoll(force)
+        local now = tick()
+        if not force and (now - lastTriggerRollTime < 3.5) then
+            return false, "Thao tác gạt cần quá nhanh, đang chờ cooldown"
+        end
+
+        -- RÀNG BUỘC: Nếu trên bục đang có quặng trúng mục tiêu nhưng chưa mua được (ví dụ do đang tích lũy tiền),
+        -- TUYỆT ĐỐI KHÔNG GẠT CẦN ROLL LẠI vì sẽ làm mất quặng quý!
+        if not force then
+            local hasPending, pendingOre, pedIdx = AutoRoll.hasPendingWantedOreOnPedestals()
+            if hasPending then
+                return false, string.format("Bục %d đang có %s chờ mua, tạm dừng roll để bảo vệ quặng!", pedIdx, pendingOre)
+            end
+        end
+        lastTriggerRollTime = now
+
         local leverPrompt = AutoRoll.getAutoRollerPrompt()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -392,6 +409,88 @@ function AutoRoll.init(deps)
         return false
     end
 
+    -- Lấy giá mua của quặng trên bục quay
+    function AutoRoll.getPedestalPrice(pedestal, buyPrompt)
+        if not pedestal then return nil end
+
+        -- 1. Kiểm tra text trên buyPrompt (ActionText: "Buy ($50,000)", ObjectText, v.v.)
+        if buyPrompt then
+            if buyPrompt.ActionText and buyPrompt.ActionText ~= "" then
+                local p = Utils.parseMoneyString(buyPrompt.ActionText)
+                if p and p > 0 then return p end
+            end
+            if buyPrompt.ObjectText and buyPrompt.ObjectText ~= "" then
+                local p = Utils.parseMoneyString(buyPrompt.ObjectText)
+                if p and p > 0 then return p end
+            end
+        end
+
+        -- 2. Kiểm tra Attributes trên bục hoặc prompt
+        for _, obj in ipairs({pedestal, buyPrompt, pedestal:FindFirstChild("LocalRollingOreDisplay")}) do
+            if obj then
+                for _, attr in ipairs({"Price", "Cost", "PriceNumber", "OrePrice", "Value", "Amount"}) do
+                    local val = obj:GetAttribute(attr)
+                    if type(val) == "number" and val > 0 then
+                        return val
+                    elseif type(val) == "string" then
+                        local p = Utils.parseMoneyString(val)
+                        if p and p > 0 then return p end
+                    end
+                end
+            end
+        end
+
+        -- 3. Kiểm tra ValueObject con
+        for _, name in ipairs({"Price", "Cost", "PriceValue", "Value"}) do
+            local vo = pedestal:FindFirstChild(name)
+            if vo and vo:IsA("ValueBase") then
+                if type(vo.Value) == "number" and vo.Value > 0 then
+                    return vo.Value
+                elseif type(vo.Value) == "string" then
+                    local p = Utils.parseMoneyString(vo.Value)
+                    if p and p > 0 then return p end
+                end
+            end
+        end
+
+        -- 4. Kiểm tra TextLabel con (BillboardGui chứa ký tự $ hoặc chữ Cost/Price)
+        for _, desc in ipairs(pedestal:GetDescendants()) do
+            if desc:IsA("TextLabel") and desc.Visible and desc.Text ~= "" then
+                local txt = desc.Text
+                if txt:find("%$") or txt:lower():find("cost") or txt:lower():find("price") then
+                    local p = Utils.parseMoneyString(txt)
+                    if p and p > 0 then return p end
+                end
+            end
+        end
+
+        return nil
+    end
+
+    -- Kiểm tra xem hiện có quặng mục tiêu nào trên 6 bục đang chờ mua (chưa mua được vì thiếu tiền)
+    function AutoRoll.hasPendingWantedOreOnPedestals()
+        local base = Utils.getMyBase()
+        if not base or not base:FindFirstChild("OrePedestals") then return false end
+
+        for i = 1, 6 do
+            local pedestal = base.OrePedestals:FindFirstChild("RolledOrePedestal" .. i)
+            if pedestal then
+                local oreName = AutoRoll.getOreNameFromPedestal(pedestal)
+                if AutoRoll.isOreWanted(oreName) then
+                    for _, p in ipairs(pedestal:GetDescendants()) do
+                        if p:IsA("ProximityPrompt") and p.Enabled then
+                            local act = p.ActionText:lower()
+                            if (act:find("buy") or act:find("claim") or act:find("take") or act == "") and not act:find("place") then
+                                return true, oreName, i
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return false
+    end
+
     -- 6. Quét & Mua quặng trên 6 bục (và tự động bật lại Auto Roll sau khi mua xong)
     function AutoRoll.checkAndBuyMatchingPedestals()
         local base = Utils.getMyBase()
@@ -402,6 +501,7 @@ function AutoRoll.init(deps)
         local originCF = root and root.CFrame
 
         local boughtCount = 0
+        local hasWaitingForMoney = false
         local now = tick()
 
         for i = 1, 6 do
@@ -422,19 +522,37 @@ function AutoRoll.init(deps)
                     if not recentlyBought[i] or (now - recentlyBought[i] > 1.5) then
                         local oreName = AutoRoll.getOreNameFromPedestal(pedestal)
                         if AutoRoll.isOreWanted(oreName) then
-                            recentlyBought[i] = now
-                            if buyPrompt.Parent and buyPrompt.Parent:IsA("BasePart") then
-                                Utils.teleportTo(buyPrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
-                                task.wait(0.08)
+                            -- RÀNG BUỘC: Kiểm tra số tiền hiện tại trước khi bay tới mua
+                            local orePrice = AutoRoll.getPedestalPrice(pedestal, buyPrompt)
+                            local playerMoney = Utils.getPlayerMoney()
+
+                            if playerMoney and orePrice and playerMoney < orePrice then
+                                -- Chưa đủ tiền: KHÔNG bay tới, KHÔNG bấm prompt, đợi đủ hẳn mua!
+                                hasWaitingForMoney = true
+                                if not lastMoneyWarnTime[i] or (now - lastMoneyWarnTime[i] > 10) then
+                                    lastMoneyWarnTime[i] = now
+                                    Fluent:Notify({
+                                        Title = "⏳ CHƯA ĐỦ TIỀN MUA",
+                                        Content = string.format("Bục %d: %s (Cần: $%s | Có: $%s). Đang đợi tích lũy đủ tiền...", i, oreName, Utils.formatNumber(orePrice), Utils.formatNumber(playerMoney)),
+                                        Duration = 4
+                                    })
+                                end
+                            else
+                                -- Đủ tiền (hoặc không giới hạn): Tiến hành mua ngay
+                                recentlyBought[i] = now
+                                if buyPrompt.Parent and buyPrompt.Parent:IsA("BasePart") then
+                                    Utils.teleportTo(buyPrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
+                                    task.wait(0.08)
+                                end
+                                Utils.firePrompt(buyPrompt)
+                                task.wait(0.12)
+                                boughtCount = boughtCount + 1
+                                Fluent:Notify({
+                                    Title = "💎 ĐÃ MUA QUẶNG!",
+                                    Content = string.format("Bục %d: %s%s", i, oreName, orePrice and (" ($" .. Utils.formatNumber(orePrice) .. ")") or ""),
+                                    Duration = 3
+                                })
                             end
-                            Utils.firePrompt(buyPrompt)
-                            task.wait(0.12)
-                            boughtCount = boughtCount + 1
-                            Fluent:Notify({
-                                Title = "💎 ĐÃ MUA QUẶNG!",
-                                Content = string.format("Bục %d: %s", i, oreName),
-                                Duration = 3
-                            })
                         end
                     end
                 end
@@ -446,9 +564,10 @@ function AutoRoll.init(deps)
             if originCF then
                 Utils.teleportTo(originCF)
             end
-            if State.AutoReRollAfterBuy then
+            -- Chỉ kích hoạt Roll lại khi KHÔNG còn bục nào đang giữ quặng quý chờ đủ tiền
+            if State.AutoReRollAfterBuy and not hasWaitingForMoney then
                 task.wait(0.4)
-                local ok = AutoRoll.triggerGameAutoRoll(false)
+                local ok, msg = AutoRoll.triggerGameAutoRoll(false)
                 if ok then
                     Fluent:Notify({
                         Title = "🔄 TIẾP TỤC AUTO ROLL",

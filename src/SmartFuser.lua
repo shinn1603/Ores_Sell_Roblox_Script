@@ -62,6 +62,12 @@ function SmartFuser.init(deps)
         -- 4. Nạp quặng vào từng node trống (TELEPORT TRƯỚC → CẦM QUẶNG → BẤM PLACE)
         local placedCount = 0
         for _, prompt in ipairs(emptyNodes) do
+            -- RÀNG BUỘC: Kiểm tra túi đồ TRƯỚC KHI bay tới node!
+            -- Nếu đã hết quặng cho phép nung thì dừng ngay, không bay tới node tiếp theo để tránh việc thừa thãi!
+            if not Utils.hasToolInWhitelist(State.AllowedFuseOres) then
+                break
+            end
+
             -- Bước A: Teleport đến node TRƯỚC (chưa cầm gì cả!)
             if prompt.Parent and prompt.Parent:IsA("BasePart") then
                 Utils.unequipAllTools()
@@ -104,8 +110,8 @@ function SmartFuser.init(deps)
         -- Cất toàn bộ tool vào túi, không cầm trên tay
         Utils.unequipAllTools()
 
-        -- QUAY LẠI VỊ TRÍ ĐỨNG BAN ĐẦU (Không đứng ngơ ngác ở Fuser!)
-        if originCF then
+        -- QUAY LẠI VỊ TRÍ ĐỨNG BAN ĐẦU (Nếu đã di chuyển nạp quặng)
+        if placedCount > 0 and originCF then
             Utils.teleportTo(originCF)
         end
 
