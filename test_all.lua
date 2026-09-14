@@ -141,23 +141,19 @@ if showcaseRemote and myBase then
             log(string.format("  └─ GetState LỖI: %s", tostring(stateErr)))
         end
 
-        local actRes = nil
-        local actOk, actErr = pcall(function()
-            actRes = showcaseRemote:InvokeServer(myBase.Name, slot, "ActivateBuff")
-        end)
-        if actOk then
-            local success = actRes and actRes.success
-            local msg = actRes and actRes.message or "nil"
-            log(string.format("  └─ ActivateBuff(%s, %d): Tra ve success=%s, msg='%s'", myBase.Name, slot, tostring(success), tostring(msg)))
-        else
-            log(string.format("  └─ ActivateBuff LỖI: %s", tostring(actErr)))
-        end
+        local actRes1 = nil
+        pcall(function() actRes1 = showcaseRemote:InvokeServer("ActivateBoost", slot, myBase.Name) end)
+        log(string.format("  └─ InvokeServer('ActivateBoost', %d, %s): success=%s, res=%s", slot, myBase.Name, tostring(actRes1 and actRes1.success), tostring(actRes1 and (actRes1.message or actRes1.result or actRes1.Multiplier))))
+
+        local actRes2 = nil
+        pcall(function() actRes2 = showcaseRemote:InvokeServer(myBase.Name, slot, "ActivateBuff") end)
+        log(string.format("  └─ InvokeServer(%s, %d, 'ActivateBuff'): success=%s, res=%s", myBase.Name, slot, tostring(actRes2 and actRes2.success), tostring(actRes2 and (actRes2.message or actRes2.result or actRes2.Multiplier))))
     end
 else
     log("ShowcasePedestalAction Remote hoặc Base: KHÔNG TÌM THẤY")
 end
 
--- [TEST 3] THỬ NÚT APPLY GEMS & QUÉT BẢNG XÁC NHẬN
+-- [TEST 3] THỬ BẤM APPLY GEMS & QUÉT CONFIRMATION PANEL
 log("\n--- [TEST 3] THỬ BẤM APPLY GEMS & QUÉT CONFIRMATION PANEL ---")
 local pg = LocalPlayer:FindFirstChild("PlayerGui")
 local gemBtn = nil
@@ -205,6 +201,28 @@ if gemBtn then
             end
         end
         log("  └─ Các nút trong ConfirmationPanel: " .. table.concat(btns, " | "))
+
+        local yesBtn = confirmPanel:FindFirstChild("YesButton", true)
+        if yesBtn then
+            log("  └─ [TEST CLICK] Đang bấm YesButton để xác nhận Apply Gem...")
+            pcall(function()
+                if firesignal then
+                    if yesBtn.Activated then firesignal(yesBtn.Activated) end
+                    if yesBtn.MouseButton1Click then firesignal(yesBtn.MouseButton1Click) end
+                end
+                if yesBtn.MouseButton1Click then yesBtn.MouseButton1Click:Fire() end
+                local vim = VirtualInputManager or game:GetService("VirtualInputManager")
+                if vim and yesBtn.AbsolutePosition and yesBtn.AbsoluteSize and yesBtn.AbsoluteSize.X > 0 then
+                    local cx = yesBtn.AbsolutePosition.X + yesBtn.AbsoluteSize.X / 2
+                    local cy = yesBtn.AbsolutePosition.Y + yesBtn.AbsoluteSize.Y / 2
+                    vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                    task.wait(0.04)
+                    vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                end
+            end)
+            task.wait(0.3)
+            log("  └─ [TEST CLICK] Đã gửi tín hiệu bấm YesButton thành công!")
+        end
     end
 end
 

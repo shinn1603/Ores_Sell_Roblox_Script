@@ -95,16 +95,28 @@ function SmartFuser.init(deps)
 
             task.wait(0.25) -- Đợi game server xác nhận tool đã trên tay
 
-            -- Bước C: Kích hoạt prompt để đặt quặng vào Fuser
-            Utils.firePrompt(prompt)
-            task.wait(0.4)
-
-            -- Bước D: Nếu tool vẫn còn trên tay (game chưa nhận) -> thử lại 1 lần nữa
-            if tool.Parent == char and prompt.Enabled then
-                Utils.equipToolToHand(tool)
-                task.wait(0.15)
+            -- Bước C: Kích hoạt prompt để đặt quặng vào Fuser (chỉ khi action là Place)
+            local actText = (prompt.ActionText or ""):lower()
+            if actText:find("place") or actText:find("bỏ") or actText:find("đặt") or actText == "" then
                 Utils.firePrompt(prompt)
-                task.wait(0.35)
+
+                -- Đợi tối đa 0.8s kiểm tra xem quặng đã nạp vào node thành công chưa (tool rời tay)
+                local startWait = tick()
+                while tick() - startWait < 0.8 do
+                    if not tool or tool.Parent ~= char then
+                        break
+                    end
+                    task.wait(0.08)
+                end
+
+                -- Bước D: Nếu tool vẫn còn trên tay VÀ prompt vẫn là "Place" thì thử lại duy nhất 1 lần
+                if tool and tool.Parent == char and prompt.Enabled then
+                    local actNow = (prompt.ActionText or ""):lower()
+                    if actNow:find("place") or actNow:find("bỏ") or actNow:find("đặt") or actNow == "" then
+                        Utils.firePrompt(prompt)
+                        task.wait(0.4)
+                    end
+                end
             end
 
             placedCount = placedCount + 1

@@ -106,42 +106,27 @@ function Utils.teleportTo(cf)
 end
 
 function Utils.firePrompt(prompt)
-    if prompt and prompt:IsA("ProximityPrompt") then
-        pcall(function()
-            prompt.MaxActivationDistance = 9999
-            prompt.RequiresLineOfSight = false
-            prompt.Enabled = true
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    pcall(function()
+        prompt.MaxActivationDistance = 9999
+        prompt.RequiresLineOfSight = false
+        prompt.Enabled = true
 
-            local holdTime = prompt.HoldDuration
-            if not holdTime or holdTime <= 0 then
-                holdTime = 0.1
-            end
-
-            -- 1. Gọi trực tiếp API native của Roblox Engine
-            pcall(function()
-                prompt:InputHoldBegin()
+        local holdTime = prompt.HoldDuration or 0
+        if fireproximityprompt then
+            -- Executor C-level API: Chỉ gọi DUY NHẤT 1 LẦN (tránh đặt xong tự tháo)
+            fireproximityprompt(prompt, holdTime > 0 and holdTime or 0)
+        else
+            -- Native Roblox API
+            prompt:InputHoldBegin()
+            if holdTime > 0 then
                 task.wait(holdTime + 0.05)
-                prompt:InputHoldEnd()
-            end)
-
-            -- 2. Hỗ trợ executor C-level
-            if fireproximityprompt then
-                pcall(function() fireproximityprompt(prompt, 0, true) end)
-                pcall(function() fireproximityprompt(prompt) end)
+            else
+                task.wait(0.05)
             end
-
-            -- 3. VirtualInputManager (luôn đảm bảo nhả phím đúng thời gian)
-            local vim = VirtualInputManager or game:GetService("VirtualInputManager")
-            if vim then
-                local keyCode = prompt.KeyboardKeyCode or Enum.KeyCode.E
-                pcall(function()
-                    vim:SendKeyEvent(true, keyCode, false, game)
-                    task.wait(holdTime)
-                    vim:SendKeyEvent(false, keyCode, false, game)
-                end)
-            end
-        end)
-    end
+            prompt:InputHoldEnd()
+        end
+    end)
 end
 
 function Utils.isOreMatchingWhitelist(toolName, whitelistMap)

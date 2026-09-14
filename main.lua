@@ -262,42 +262,27 @@ function Utils.teleportTo(cf)
 end
 
 function Utils.firePrompt(prompt)
-    if prompt and prompt:IsA("ProximityPrompt") then
-        pcall(function()
-            prompt.MaxActivationDistance = 9999
-            prompt.RequiresLineOfSight = false
-            prompt.Enabled = true
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    pcall(function()
+        prompt.MaxActivationDistance = 9999
+        prompt.RequiresLineOfSight = false
+        prompt.Enabled = true
 
-            local holdTime = prompt.HoldDuration
-            if not holdTime or holdTime <= 0 then
-                holdTime = 0.1
-            end
-
-            -- 1. Gọi trực tiếp API native của Roblox Engine
-            pcall(function()
-                prompt:InputHoldBegin()
+        local holdTime = prompt.HoldDuration or 0
+        if fireproximityprompt then
+            -- Executor C-level API: Chỉ gọi DUY NHẤT 1 LẦN (tránh đặt xong tự tháo)
+            fireproximityprompt(prompt, holdTime > 0 and holdTime or 0)
+        else
+            -- Native Roblox API
+            prompt:InputHoldBegin()
+            if holdTime > 0 then
                 task.wait(holdTime + 0.05)
-                prompt:InputHoldEnd()
-            end)
-
-            -- 2. Hỗ trợ executor C-level
-            if fireproximityprompt then
-                pcall(function() fireproximityprompt(prompt, 0, true) end)
-                pcall(function() fireproximityprompt(prompt) end)
+            else
+                task.wait(0.05)
             end
-
-            -- 3. VirtualInputManager (luôn đảm bảo nhả phím đúng thời gian)
-            local vim = VirtualInputManager or game:GetService("VirtualInputManager")
-            if vim then
-                local keyCode = prompt.KeyboardKeyCode or Enum.KeyCode.E
-                pcall(function()
-                    vim:SendKeyEvent(true, keyCode, false, game)
-                    task.wait(holdTime)
-                    vim:SendKeyEvent(false, keyCode, false, game)
-                end)
-            end
-        end)
-    end
+            prompt:InputHoldEnd()
+        end
+    end)
 end
 
 function Utils.isOreMatchingWhitelist(toolName, whitelistMap)
@@ -952,7 +937,7 @@ function AutoRoll.init(deps)
     -- 4. Kích hoạt Auto Roll của game (Thao tác gạt cần Auto Roller thực tế trong Base)
     function AutoRoll.triggerGameAutoRoll(force)
         local now = tick()
-        if not force and (now - lastTriggerRollTime < 3.5) then
+        if not force and (now - lastTriggerRollTime < 1.0) then
             return false, "Thao tác gạt cần quá nhanh, đang chờ cooldown"
         end
 
@@ -1262,7 +1247,7 @@ function AutoRoll.init(deps)
             -- Chỉ kích hoạt Roll lại khi KHÔNG còn bục nào đang giữ quặng quý chờ đủ tiền
             if State.AutoReRollAfterBuy and not hasWaitingForMoney then
                 task.wait(0.4)
-                local ok, msg = AutoRoll.triggerGameAutoRoll(false)
+                local ok, msg = AutoRoll.triggerGameAutoRoll(true)
                 if ok then
                     Fluent:Notify({
                         Title = "🔄 TIẾP TỤC AUTO ROLL",
@@ -1378,16 +1363,28 @@ function SmartFuser.init(deps)
 
             task.wait(0.25) -- Đợi game server xác nhận tool đã trên tay
 
-            -- Bước C: Kích hoạt prompt để đặt quặng vào Fuser
-            Utils.firePrompt(prompt)
-            task.wait(0.4)
-
-            -- Bước D: Nếu tool vẫn còn trên tay (game chưa nhận) -> thử lại 1 lần nữa
-            if tool.Parent == char and prompt.Enabled then
-                Utils.equipToolToHand(tool)
-                task.wait(0.15)
+            -- Bước C: Kích hoạt prompt để đặt quặng vào Fuser (chỉ khi action là Place)
+            local actText = (prompt.ActionText or ""):lower()
+            if actText:find("place") or actText:find("bỏ") or actText:find("đặt") or actText == "" then
                 Utils.firePrompt(prompt)
-                task.wait(0.35)
+
+                -- Đợi tối đa 0.8s kiểm tra xem quặng đã nạp vào node thành công chưa (tool rời tay)
+                local startWait = tick()
+                while tick() - startWait < 0.8 do
+                    if not tool or tool.Parent ~= char then
+                        break
+                    end
+                    task.wait(0.08)
+                end
+
+                -- Bước D: Nếu tool vẫn còn trên tay VÀ prompt vẫn là "Place" thì thử lại duy nhất 1 lần
+                if tool and tool.Parent == char and prompt.Enabled then
+                    local actNow = (prompt.ActionText or ""):lower()
+                    if actNow:find("place") or actNow:find("bỏ") or actNow:find("đặt") or actNow == "" then
+                        Utils.firePrompt(prompt)
+                        task.wait(0.4)
+                    end
+                end
             end
 
             placedCount = placedCount + 1
@@ -1423,6 +1420,44 @@ function MoneyPipeline.init(deps)
     local Utils = deps.Utils
     local State = deps.State
 
+    local function isPipelineTool(tool)
+        if not tool or not tool:IsA("Tool") then return false end
+        local n = tool.Name:lower()
+
+        -- 1. Tuyệt đối loại trừ tất cả Pet / Động vật / Thú cưng / Vũ khí
+        local blacklist = {
+            "capybara", "cat", "lizard", "parrot", "turtle", "rabbit", "koala", "goat", "llama",
+            "kangaroo", "retriever", "zebra", "pony", "horse", "snake", "cow", "elephant",
+            "bear", "gorilla", "triceratops", "brachiosaurus", "spinosaurus", "tiger", "imp",
+            "griffin", "hydra", "kraken", "wyvern", "pet", "pickaxe", "sword", "weapon", "gun",
+            "rod", "potion", "gem", "coating"
+        }
+        for _, b in ipairs(blacklist) do
+            if n:find(b) then return false end
+        end
+
+        -- 2. Match chính xác thùng quặng hoặc kim loại nung:
+        -- "Crate", "Ore Crate", "Box", "Metal", "Metal Bar", "Refined Metal", "Ingot", "ORES"
+        if n:find("crate") or n == "box" or n:find("%s*box") or n == "ores" or n:find("ore%s*crate") or n:find("crate%s*of%s*ores") then
+            return true
+        end
+        if n:find("metal") or n:find("ingot") or n:find("refined") or n:match("%f[%a]bar%f[%A]") then
+            return true
+        end
+        return false
+    end
+
+    local function isRefinedTool(tool)
+        if not isPipelineTool(tool) then return false end
+        local n = tool.Name:lower()
+        return n:find("metal") or n:find("refined") or n:find("ingot") or (n:match("%f[%a]bar%f[%A]") ~= nil)
+    end
+
+    local function isRawCrateTool(tool)
+        if not isPipelineTool(tool) then return false end
+        return not isRefinedTool(tool)
+    end
+
     local function findPipelineTool()
         local char = LocalPlayer.Character
         local backpack = LocalPlayer:FindFirstChild("Backpack")
@@ -1430,32 +1465,13 @@ function MoneyPipeline.init(deps)
         for _, container in ipairs(containers) do
             if container then
                 for _, item in ipairs(container:GetChildren()) do
-                    if item:IsA("Tool") then
-                        local n = item.Name:lower()
-                        if not n:find("pickaxe") and not n:find("sword") and not n:find("weapon") and not n:find("gun") and not n:find("rod") and not n:find("potion") then
-                            -- Chỉ match thùng quặng (Crate / Box) hoặc kim loại nung (Metal / Bar / Ingot / Refined)
-                            -- Tuyệt đối không match quặng thông thường (ví dụ: Gold Ore, Stone Ore)
-                            if n:find("crate") or n:find("box") or n:find("metal") or n:find("bar") or n:find("ingot") or n:find("refined") then
-                                return item
-                            end
-                        end
+                    if isPipelineTool(item) then
+                        return item
                     end
                 end
             end
         end
         return nil
-    end
-
-    local function isRefinedTool(tool)
-        if not tool then return false end
-        local n = tool.Name:lower()
-        return n:find("metal") or n:find("bar") or n:find("refined") or n:find("ingot")
-    end
-
-    local function isRawCrateTool(tool)
-        if not tool then return false end
-        local n = tool.Name:lower()
-        return (n:find("crate") or n:find("box")) and not isRefinedTool(tool)
     end
 
     function MoneyPipeline.run()
@@ -1484,12 +1500,12 @@ function MoneyPipeline.init(deps)
         local function sellAtSellerTable()
             local metalTool = findPipelineTool()
             if metalTool then Utils.equipToolToHand(metalTool) end
-            task.wait(0.15)
+            task.wait(0.12)
 
             local sellPrompt = nil
             if st then
                 for _, p in ipairs(st:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and p.Enabled then
+                    if p:IsA("ProximityPrompt") then
                         local act = (p.ActionText or ""):lower()
                         if act:find("sell") or act:find("bán") or act == "" then
                             sellPrompt = p
@@ -1505,9 +1521,14 @@ function MoneyPipeline.init(deps)
             if sellTargetPart then
                 Utils.teleportTo(sellTargetPart.CFrame + Vector3.new(0, 1.5, 0))
                 task.wait(stepDelay)
+
                 if metalTool and metalTool.Parent ~= char then Utils.equipToolToHand(metalTool) end
                 task.wait(0.1)
-                if sellPrompt then Utils.firePrompt(sellPrompt) end
+
+                if sellPrompt then
+                    pcall(function() sellPrompt.Enabled = true end)
+                    Utils.firePrompt(sellPrompt)
+                end
                 task.wait(stepDelay)
             end
 
@@ -1526,11 +1547,13 @@ function MoneyPipeline.init(deps)
         -- BƯỚC 0: KIỂM TRA XEM LÒ NUNG ĐÃ CÓ SẴN THÙNG KIM LOẠI NUNG XONG CHƯA
         local readyMetalPrompt = nil
         if furnace then
-            local metalPart = furnace:FindFirstChild("MetalCratePlacementPart") or furnace
-            for _, p in ipairs(metalPart:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and (p.ActionText:lower():find("pick") or p.ActionText:lower():find("take")) and p.Enabled then
-                    readyMetalPrompt = p
-                    break
+            for _, p in ipairs(furnace:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.Enabled then
+                    local act = (p.ActionText or ""):lower()
+                    if (act:find("pick") or act:find("take") or act:find("lấy")) and not act:find("place") and not act:find("purchase") then
+                        readyMetalPrompt = p
+                        break
+                    end
                 end
             end
         end
@@ -1551,11 +1574,13 @@ function MoneyPipeline.init(deps)
             -- Kiểm tra CrateMaker xem có thùng mới chưa TRƯỚC KHI bay tới!
             local pickOrePrompt = nil
             if cm then
-                local spawnPt = cm:FindFirstChild("CrateSpawnPoint") or cm
-                for _, p in ipairs(spawnPt:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and (p.ActionText:lower():find("pick") or p.ActionText:lower():find("take") or p.ActionText == "") and p.Enabled then
-                        pickOrePrompt = p
-                        break
+                for _, p in ipairs(cm:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") then
+                        local act = (p.ActionText or ""):lower()
+                        if act:find("pick") or act:find("take") or act:find("nhặt") or act:find("ore") or act == "" then
+                            pickOrePrompt = p
+                            break
+                        end
                     end
                 end
             end
@@ -1564,6 +1589,10 @@ function MoneyPipeline.init(deps)
             -- -> KHÔNG bay đi đâu cả, giữ nguyên vị trí, tránh làm việc thừa thãi!
             if not pickOrePrompt or not pickOrePrompt.Parent or not pickOrePrompt.Parent:IsA("BasePart") then
                 return false, "Mỏ đang đào quặng, chưa có thùng mới"
+            end
+
+            if not pickOrePrompt.Enabled then
+                return false, "Mỏ đang đào quặng, thùng chưa sẵn sàng"
             end
 
             -- Có thùng: Bay lại nhặt
@@ -1576,24 +1605,33 @@ function MoneyPipeline.init(deps)
         -- BƯỚC 2: Bỏ vào lò nung Furnace ('Place ORES')
         local placePrompt = nil
         if furnace then
-            local placePart = furnace:FindFirstChild("PlaceCratesPromptPart") or furnace
-            for _, p in ipairs(placePart:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and (p.ActionText:lower():find("place") or p.ActionText:lower():find("bỏ")) and p.Enabled then
-                    placePrompt = p
-                    break
+            for _, p in ipairs(furnace:GetDescendants()) do
+                if p:IsA("ProximityPrompt") then
+                    local act = (p.ActionText or ""):lower()
+                    if (act:find("place") or act:find("bỏ") or act:find("đặt")) and not act:find("purchase") then
+                        placePrompt = p
+                        break
+                    end
                 end
             end
         end
 
-        if placePrompt and placePrompt.Parent and placePrompt.Parent:IsA("BasePart") then
-            Utils.teleportTo(placePrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
+        local placeTargetPart = (placePrompt and placePrompt.Parent and placePrompt.Parent:IsA("BasePart") and placePrompt.Parent)
+            or (furnace and furnace:FindFirstChild("PlaceCratesPromptPart"))
+            or (furnace and furnace:FindFirstChildWhichIsA("BasePart", true))
+
+        if placeTargetPart then
+            Utils.teleportTo(placeTargetPart.CFrame + Vector3.new(0, 1.5, 0))
             task.wait(stepDelay)
 
             local crateTool = findPipelineTool()
             if crateTool then Utils.equipToolToHand(crateTool) end
             task.wait(0.12)
 
-            Utils.firePrompt(placePrompt)
+            if placePrompt then
+                pcall(function() placePrompt.Enabled = true end)
+                Utils.firePrompt(placePrompt)
+            end
             task.wait(stepDelay + 0.2)
         end
 
@@ -1602,11 +1640,13 @@ function MoneyPipeline.init(deps)
         local waitSmeltStart = tick()
         while tick() - waitSmeltStart < 6.5 do
             if furnace then
-                local metalPart = furnace:FindFirstChild("MetalCratePlacementPart") or furnace
-                for _, p in ipairs(metalPart:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and (p.ActionText:lower():find("pick") or p.ActionText:lower():find("take")) and p.Enabled then
-                        metalPrompt = p
-                        break
+                for _, p in ipairs(furnace:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") and p.Enabled then
+                        local act = (p.ActionText or ""):lower()
+                        if (act:find("pick") or act:find("take") or act:find("lấy")) and not act:find("place") and not act:find("purchase") then
+                            metalPrompt = p
+                            break
+                        end
                     end
                 end
             end
@@ -1713,43 +1753,47 @@ function ShowcaseBuff.init(deps)
             end)
             success = true
 
-            -- C. ĐỢI VÀ TỰ ĐỘNG BẤM XÁC NHẬN NẾU XUẤT HIỆN BẢNG CONFIRMATIONPANEL
-            task.wait(0.25)
+            -- C. ĐỢI VÀ TỰ ĐỘNG BẤM XÁC NHẬN YESBUTTON TRONG BẢNG CONFIRMATIONPANEL
+            task.wait(0.3)
             local confirmPanel = (mainFrames and mainFrames:FindFirstChild("Frames") and mainFrames.Frames:FindFirstChild("ConfirmationPanel"))
                 or pg:FindFirstChild("ConfirmationPanel", true)
 
-            if confirmPanel and confirmPanel.Visible then
-                for _, desc in ipairs(confirmPanel:GetDescendants()) do
-                    if desc:IsA("GuiButton") and desc.Visible then
-                        local n = desc.Name:lower()
-                        local t = (desc:IsA("TextButton") and desc.Text or ""):lower()
-                        if n:find("confirm") or n:find("yes") or n:find("ok") or n:find("accept") or n:find("apply")
-                           or t:find("yes") or t:find("confirm") or t:find("ok") or t:find("áp dụng") then
-                            pcall(function()
-                                if firesignal then
-                                    if desc.Activated then firesignal(desc.Activated) end
-                                    if desc.MouseButton1Click then firesignal(desc.MouseButton1Click) end
-                                end
-                                if getconnections then
-                                    if desc.Activated then
-                                        for _, c in ipairs(getconnections(desc.Activated)) do c:Fire() end
-                                    end
-                                    if desc.MouseButton1Click then
-                                        for _, c in ipairs(getconnections(desc.MouseButton1Click)) do c:Fire() end
-                                    end
-                                end
-                                local vim = VirtualInputManager or game:GetService("VirtualInputManager")
-                                if vim and desc.AbsolutePosition and desc.AbsoluteSize then
-                                    local cx = desc.AbsolutePosition.X + desc.AbsoluteSize.X / 2
-                                    local cy = desc.AbsolutePosition.Y + desc.AbsoluteSize.Y / 2
-                                    vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-                                    task.wait(0.04)
-                                    vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-                                end
-                            end)
+            if confirmPanel then
+                local yesBtn = confirmPanel:FindFirstChild("YesButton", true)
+                if not yesBtn then
+                    for _, desc in ipairs(confirmPanel:GetDescendants()) do
+                        if desc:IsA("GuiButton") and desc.Name:lower():find("yes") then
+                            yesBtn = desc
                             break
                         end
                     end
+                end
+
+                if yesBtn then
+                    pcall(function()
+                        if firesignal then
+                            if yesBtn.Activated then firesignal(yesBtn.Activated) end
+                            if yesBtn.MouseButton1Click then firesignal(yesBtn.MouseButton1Click) end
+                        end
+                        if getconnections then
+                            if yesBtn.Activated then
+                                for _, c in ipairs(getconnections(yesBtn.Activated)) do c:Fire() end
+                            end
+                            if yesBtn.MouseButton1Click then
+                                for _, c in ipairs(getconnections(yesBtn.MouseButton1Click)) do c:Fire() end
+                            end
+                        end
+                        if yesBtn.MouseButton1Click then yesBtn.MouseButton1Click:Fire() end
+
+                        local vim = VirtualInputManager or game:GetService("VirtualInputManager")
+                        if vim and yesBtn.AbsolutePosition and yesBtn.AbsoluteSize and yesBtn.AbsoluteSize.X > 0 then
+                            local cx = yesBtn.AbsolutePosition.X + yesBtn.AbsoluteSize.X / 2
+                            local cy = yesBtn.AbsolutePosition.Y + yesBtn.AbsoluteSize.Y / 2
+                            vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                            task.wait(0.04)
+                            vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                        end
+                    end)
                 end
             end
         end
@@ -1802,9 +1846,14 @@ function ShowcaseBuff.init(deps)
 
                 if timeLeft <= 10 then
                     pcall(function()
-                        local res = rem:InvokeServer(myBaseName, i, "ActivateBuff")
+                        -- Chuẩn lệnh InvokeServer: "ActivateBoost", slot, baseName
+                        local res = nil
+                        pcall(function() res = rem:InvokeServer("ActivateBoost", i, myBaseName) end)
+                        if not res or not res.success then
+                            pcall(function() res = rem:InvokeServer(myBaseName, i, "ActivateBuff") end)
+                        end
                         if res and res.success then
-                            local actMult = (res.state and res.state.Multiplier) or mult
+                            local actMult = (res.state and res.state.Multiplier) or res.Multiplier or mult
                             table.insert(results, string.format("Bục %d (%s): Đã kích hoạt Buff x%s!", i, oreName, tostring(actMult)))
                         else
                             table.insert(results, string.format("Bục %d (%s): Đã gửi lệnh kích hoạt", i, oreName))

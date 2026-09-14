@@ -79,43 +79,47 @@ function ShowcaseBuff.init(deps)
             end)
             success = true
 
-            -- C. ĐỢI VÀ TỰ ĐỘNG BẤM XÁC NHẬN NẾU XUẤT HIỆN BẢNG CONFIRMATIONPANEL
-            task.wait(0.25)
+            -- C. ĐỢI VÀ TỰ ĐỘNG BẤM XÁC NHẬN YESBUTTON TRONG BẢNG CONFIRMATIONPANEL
+            task.wait(0.3)
             local confirmPanel = (mainFrames and mainFrames:FindFirstChild("Frames") and mainFrames.Frames:FindFirstChild("ConfirmationPanel"))
                 or pg:FindFirstChild("ConfirmationPanel", true)
 
-            if confirmPanel and confirmPanel.Visible then
-                for _, desc in ipairs(confirmPanel:GetDescendants()) do
-                    if desc:IsA("GuiButton") and desc.Visible then
-                        local n = desc.Name:lower()
-                        local t = (desc:IsA("TextButton") and desc.Text or ""):lower()
-                        if n:find("confirm") or n:find("yes") or n:find("ok") or n:find("accept") or n:find("apply")
-                           or t:find("yes") or t:find("confirm") or t:find("ok") or t:find("áp dụng") then
-                            pcall(function()
-                                if firesignal then
-                                    if desc.Activated then firesignal(desc.Activated) end
-                                    if desc.MouseButton1Click then firesignal(desc.MouseButton1Click) end
-                                end
-                                if getconnections then
-                                    if desc.Activated then
-                                        for _, c in ipairs(getconnections(desc.Activated)) do c:Fire() end
-                                    end
-                                    if desc.MouseButton1Click then
-                                        for _, c in ipairs(getconnections(desc.MouseButton1Click)) do c:Fire() end
-                                    end
-                                end
-                                local vim = VirtualInputManager or game:GetService("VirtualInputManager")
-                                if vim and desc.AbsolutePosition and desc.AbsoluteSize then
-                                    local cx = desc.AbsolutePosition.X + desc.AbsoluteSize.X / 2
-                                    local cy = desc.AbsolutePosition.Y + desc.AbsoluteSize.Y / 2
-                                    vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-                                    task.wait(0.04)
-                                    vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-                                end
-                            end)
+            if confirmPanel then
+                local yesBtn = confirmPanel:FindFirstChild("YesButton", true)
+                if not yesBtn then
+                    for _, desc in ipairs(confirmPanel:GetDescendants()) do
+                        if desc:IsA("GuiButton") and desc.Name:lower():find("yes") then
+                            yesBtn = desc
                             break
                         end
                     end
+                end
+
+                if yesBtn then
+                    pcall(function()
+                        if firesignal then
+                            if yesBtn.Activated then firesignal(yesBtn.Activated) end
+                            if yesBtn.MouseButton1Click then firesignal(yesBtn.MouseButton1Click) end
+                        end
+                        if getconnections then
+                            if yesBtn.Activated then
+                                for _, c in ipairs(getconnections(yesBtn.Activated)) do c:Fire() end
+                            end
+                            if yesBtn.MouseButton1Click then
+                                for _, c in ipairs(getconnections(yesBtn.MouseButton1Click)) do c:Fire() end
+                            end
+                        end
+                        if yesBtn.MouseButton1Click then yesBtn.MouseButton1Click:Fire() end
+
+                        local vim = VirtualInputManager or game:GetService("VirtualInputManager")
+                        if vim and yesBtn.AbsolutePosition and yesBtn.AbsoluteSize and yesBtn.AbsoluteSize.X > 0 then
+                            local cx = yesBtn.AbsolutePosition.X + yesBtn.AbsoluteSize.X / 2
+                            local cy = yesBtn.AbsolutePosition.Y + yesBtn.AbsoluteSize.Y / 2
+                            vim:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                            task.wait(0.04)
+                            vim:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                        end
+                    end)
                 end
             end
         end
@@ -168,9 +172,14 @@ function ShowcaseBuff.init(deps)
 
                 if timeLeft <= 10 then
                     pcall(function()
-                        local res = rem:InvokeServer(myBaseName, i, "ActivateBuff")
+                        -- Chuẩn lệnh InvokeServer: "ActivateBoost", slot, baseName
+                        local res = nil
+                        pcall(function() res = rem:InvokeServer("ActivateBoost", i, myBaseName) end)
+                        if not res or not res.success then
+                            pcall(function() res = rem:InvokeServer(myBaseName, i, "ActivateBuff") end)
+                        end
                         if res and res.success then
-                            local actMult = (res.state and res.state.Multiplier) or mult
+                            local actMult = (res.state and res.state.Multiplier) or res.Multiplier or mult
                             table.insert(results, string.format("Bục %d (%s): Đã kích hoạt Buff x%s!", i, oreName, tostring(actMult)))
                         else
                             table.insert(results, string.format("Bục %d (%s): Đã gửi lệnh kích hoạt", i, oreName))

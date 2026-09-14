@@ -264,7 +264,7 @@ function AutoRoll.init(deps)
     -- 4. Kích hoạt Auto Roll của game (Thao tác gạt cần Auto Roller thực tế trong Base)
     function AutoRoll.triggerGameAutoRoll(force)
         local now = tick()
-        if not force and (now - lastTriggerRollTime < 3.5) then
+        if not force and (now - lastTriggerRollTime < 1.0) then
             return false, "Thao tác gạt cần quá nhanh, đang chờ cooldown"
         end
 
@@ -574,7 +574,7 @@ function AutoRoll.init(deps)
             -- Chỉ kích hoạt Roll lại khi KHÔNG còn bục nào đang giữ quặng quý chờ đủ tiền
             if State.AutoReRollAfterBuy and not hasWaitingForMoney then
                 task.wait(0.4)
-                local ok, msg = AutoRoll.triggerGameAutoRoll(false)
+                local ok, msg = AutoRoll.triggerGameAutoRoll(true)
                 if ok then
                     Fluent:Notify({
                         Title = "🔄 TIẾP TỤC AUTO ROLL",

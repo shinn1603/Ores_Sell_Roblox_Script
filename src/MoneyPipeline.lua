@@ -12,6 +12,44 @@ function MoneyPipeline.init(deps)
     local Utils = deps.Utils
     local State = deps.State
 
+    local function isPipelineTool(tool)
+        if not tool or not tool:IsA("Tool") then return false end
+        local n = tool.Name:lower()
+
+        -- 1. Tuyệt đối loại trừ tất cả Pet / Động vật / Thú cưng / Vũ khí
+        local blacklist = {
+            "capybara", "cat", "lizard", "parrot", "turtle", "rabbit", "koala", "goat", "llama",
+            "kangaroo", "retriever", "zebra", "pony", "horse", "snake", "cow", "elephant",
+            "bear", "gorilla", "triceratops", "brachiosaurus", "spinosaurus", "tiger", "imp",
+            "griffin", "hydra", "kraken", "wyvern", "pet", "pickaxe", "sword", "weapon", "gun",
+            "rod", "potion", "gem", "coating"
+        }
+        for _, b in ipairs(blacklist) do
+            if n:find(b) then return false end
+        end
+
+        -- 2. Match chính xác thùng quặng hoặc kim loại nung:
+        -- "Crate", "Ore Crate", "Box", "Metal", "Metal Bar", "Refined Metal", "Ingot", "ORES"
+        if n:find("crate") or n == "box" or n:find("%s*box") or n == "ores" or n:find("ore%s*crate") or n:find("crate%s*of%s*ores") then
+            return true
+        end
+        if n:find("metal") or n:find("ingot") or n:find("refined") or n:match("%f[%a]bar%f[%A]") then
+            return true
+        end
+        return false
+    end
+
+    local function isRefinedTool(tool)
+        if not isPipelineTool(tool) then return false end
+        local n = tool.Name:lower()
+        return n:find("metal") or n:find("refined") or n:find("ingot") or (n:match("%f[%a]bar%f[%A]") ~= nil)
+    end
+
+    local function isRawCrateTool(tool)
+        if not isPipelineTool(tool) then return false end
+        return not isRefinedTool(tool)
+    end
+
     local function findPipelineTool()
         local char = LocalPlayer.Character
         local backpack = LocalPlayer:FindFirstChild("Backpack")
@@ -19,32 +57,13 @@ function MoneyPipeline.init(deps)
         for _, container in ipairs(containers) do
             if container then
                 for _, item in ipairs(container:GetChildren()) do
-                    if item:IsA("Tool") then
-                        local n = item.Name:lower()
-                        if not n:find("pickaxe") and not n:find("sword") and not n:find("weapon") and not n:find("gun") and not n:find("rod") and not n:find("potion") then
-                            -- Chỉ match thùng quặng (Crate / Box) hoặc kim loại nung (Metal / Bar / Ingot / Refined)
-                            -- Tuyệt đối không match quặng thông thường (ví dụ: Gold Ore, Stone Ore)
-                            if n:find("crate") or n:find("box") or n:find("metal") or n:find("bar") or n:find("ingot") or n:find("refined") then
-                                return item
-                            end
-                        end
+                    if isPipelineTool(item) then
+                        return item
                     end
                 end
             end
         end
         return nil
-    end
-
-    local function isRefinedTool(tool)
-        if not tool then return false end
-        local n = tool.Name:lower()
-        return n:find("metal") or n:find("bar") or n:find("refined") or n:find("ingot")
-    end
-
-    local function isRawCrateTool(tool)
-        if not tool then return false end
-        local n = tool.Name:lower()
-        return (n:find("crate") or n:find("box")) and not isRefinedTool(tool)
     end
 
     function MoneyPipeline.run()
@@ -73,12 +92,12 @@ function MoneyPipeline.init(deps)
         local function sellAtSellerTable()
             local metalTool = findPipelineTool()
             if metalTool then Utils.equipToolToHand(metalTool) end
-            task.wait(0.15)
+            task.wait(0.12)
 
             local sellPrompt = nil
             if st then
                 for _, p in ipairs(st:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and p.Enabled then
+                    if p:IsA("ProximityPrompt") then
                         local act = (p.ActionText or ""):lower()
                         if act:find("sell") or act:find("bán") or act == "" then
                             sellPrompt = p
@@ -94,9 +113,14 @@ function MoneyPipeline.init(deps)
             if sellTargetPart then
                 Utils.teleportTo(sellTargetPart.CFrame + Vector3.new(0, 1.5, 0))
                 task.wait(stepDelay)
+
                 if metalTool and metalTool.Parent ~= char then Utils.equipToolToHand(metalTool) end
                 task.wait(0.1)
-                if sellPrompt then Utils.firePrompt(sellPrompt) end
+
+                if sellPrompt then
+                    pcall(function() sellPrompt.Enabled = true end)
+                    Utils.firePrompt(sellPrompt)
+                end
                 task.wait(stepDelay)
             end
 
@@ -115,11 +139,13 @@ function MoneyPipeline.init(deps)
         -- BƯỚC 0: KIỂM TRA XEM LÒ NUNG ĐÃ CÓ SẴN THÙNG KIM LOẠI NUNG XONG CHƯA
         local readyMetalPrompt = nil
         if furnace then
-            local metalPart = furnace:FindFirstChild("MetalCratePlacementPart") or furnace
-            for _, p in ipairs(metalPart:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and (p.ActionText:lower():find("pick") or p.ActionText:lower():find("take")) and p.Enabled then
-                    readyMetalPrompt = p
-                    break
+            for _, p in ipairs(furnace:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.Enabled then
+                    local act = (p.ActionText or ""):lower()
+                    if (act:find("pick") or act:find("take") or act:find("lấy")) and not act:find("place") and not act:find("purchase") then
+                        readyMetalPrompt = p
+                        break
+                    end
                 end
             end
         end
@@ -140,11 +166,13 @@ function MoneyPipeline.init(deps)
             -- Kiểm tra CrateMaker xem có thùng mới chưa TRƯỚC KHI bay tới!
             local pickOrePrompt = nil
             if cm then
-                local spawnPt = cm:FindFirstChild("CrateSpawnPoint") or cm
-                for _, p in ipairs(spawnPt:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and (p.ActionText:lower():find("pick") or p.ActionText:lower():find("take") or p.ActionText == "") and p.Enabled then
-                        pickOrePrompt = p
-                        break
+                for _, p in ipairs(cm:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") then
+                        local act = (p.ActionText or ""):lower()
+                        if act:find("pick") or act:find("take") or act:find("nhặt") or act:find("ore") or act == "" then
+                            pickOrePrompt = p
+                            break
+                        end
                     end
                 end
             end
@@ -153,6 +181,10 @@ function MoneyPipeline.init(deps)
             -- -> KHÔNG bay đi đâu cả, giữ nguyên vị trí, tránh làm việc thừa thãi!
             if not pickOrePrompt or not pickOrePrompt.Parent or not pickOrePrompt.Parent:IsA("BasePart") then
                 return false, "Mỏ đang đào quặng, chưa có thùng mới"
+            end
+
+            if not pickOrePrompt.Enabled then
+                return false, "Mỏ đang đào quặng, thùng chưa sẵn sàng"
             end
 
             -- Có thùng: Bay lại nhặt
@@ -165,24 +197,33 @@ function MoneyPipeline.init(deps)
         -- BƯỚC 2: Bỏ vào lò nung Furnace ('Place ORES')
         local placePrompt = nil
         if furnace then
-            local placePart = furnace:FindFirstChild("PlaceCratesPromptPart") or furnace
-            for _, p in ipairs(placePart:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and (p.ActionText:lower():find("place") or p.ActionText:lower():find("bỏ")) and p.Enabled then
-                    placePrompt = p
-                    break
+            for _, p in ipairs(furnace:GetDescendants()) do
+                if p:IsA("ProximityPrompt") then
+                    local act = (p.ActionText or ""):lower()
+                    if (act:find("place") or act:find("bỏ") or act:find("đặt")) and not act:find("purchase") then
+                        placePrompt = p
+                        break
+                    end
                 end
             end
         end
 
-        if placePrompt and placePrompt.Parent and placePrompt.Parent:IsA("BasePart") then
-            Utils.teleportTo(placePrompt.Parent.CFrame + Vector3.new(0, 1.5, 0))
+        local placeTargetPart = (placePrompt and placePrompt.Parent and placePrompt.Parent:IsA("BasePart") and placePrompt.Parent)
+            or (furnace and furnace:FindFirstChild("PlaceCratesPromptPart"))
+            or (furnace and furnace:FindFirstChildWhichIsA("BasePart", true))
+
+        if placeTargetPart then
+            Utils.teleportTo(placeTargetPart.CFrame + Vector3.new(0, 1.5, 0))
             task.wait(stepDelay)
 
             local crateTool = findPipelineTool()
             if crateTool then Utils.equipToolToHand(crateTool) end
             task.wait(0.12)
 
-            Utils.firePrompt(placePrompt)
+            if placePrompt then
+                pcall(function() placePrompt.Enabled = true end)
+                Utils.firePrompt(placePrompt)
+            end
             task.wait(stepDelay + 0.2)
         end
 
@@ -191,11 +232,13 @@ function MoneyPipeline.init(deps)
         local waitSmeltStart = tick()
         while tick() - waitSmeltStart < 6.5 do
             if furnace then
-                local metalPart = furnace:FindFirstChild("MetalCratePlacementPart") or furnace
-                for _, p in ipairs(metalPart:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and (p.ActionText:lower():find("pick") or p.ActionText:lower():find("take")) and p.Enabled then
-                        metalPrompt = p
-                        break
+                for _, p in ipairs(furnace:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") and p.Enabled then
+                        local act = (p.ActionText or ""):lower()
+                        if (act:find("pick") or act:find("take") or act:find("lấy")) and not act:find("place") and not act:find("purchase") then
+                            metalPrompt = p
+                            break
+                        end
                     end
                 end
             end
