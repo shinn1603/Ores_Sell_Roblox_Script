@@ -396,10 +396,21 @@ function Utils.getPlayerMoney()
     local lp = LocalPlayer or game:GetService("Players").LocalPlayer
     if not lp then return nil end
 
-    -- 1. leaderstats
+    -- 1. ƯU TIÊN SỐ 1: Attribute "Money" dạng số nguyên (Game server cập nhật số 64-bit chuẩn xác 100%)
+    for _, attr in ipairs({"Money", "Cash", "Coins", "Balance", "Gold"}) do
+        local val = lp:GetAttribute(attr)
+        if type(val) == "number" and val > 0 then
+            return val
+        elseif type(val) == "string" then
+            local parsed = Utils.parseMoneyString(val)
+            if parsed and parsed > 0 then return parsed end
+        end
+    end
+
+    -- 2. leaderstats (StringValue như "$1.9Qi" hoặc NumberValue)
     local leaderstats = lp:FindFirstChild("leaderstats")
     if leaderstats then
-        for _, name in ipairs({"Cash", "Money", "Coins", "Gold", "Balance", "Dollar", "OreCoins"}) do
+        for _, name in ipairs({"Money", "Cash", "Coins", "Gold", "Balance", "Dollar", "OreCoins"}) do
             local valObj = leaderstats:FindFirstChild(name)
             if valObj and valObj:IsA("ValueBase") then
                 if type(valObj.Value) == "number" then
@@ -420,22 +431,11 @@ function Utils.getPlayerMoney()
         end
     end
 
-    -- 2. Attributes
-    for _, attr in ipairs({"Cash", "Money", "Coins", "Balance", "Gold"}) do
-        local val = lp:GetAttribute(attr)
-        if type(val) == "number" then
-            return val
-        elseif type(val) == "string" then
-            local parsed = Utils.parseMoneyString(val)
-            if parsed then return parsed end
-        end
-    end
-
     -- 3. PlayerData / Stats folder
     for _, folderName in ipairs({"PlayerData", "Data", "Stats", "Currencies"}) do
         local folder = lp:FindFirstChild(folderName)
         if folder then
-            for _, name in ipairs({"Cash", "Money", "Coins", "Balance"}) do
+            for _, name in ipairs({"Money", "Cash", "Coins", "Balance"}) do
                 local v = folder:FindFirstChild(name)
                 if v and v:IsA("ValueBase") then
                     if type(v.Value) == "number" then
@@ -496,24 +496,14 @@ function Utils.getPlayerGems()
     local lp = LocalPlayer or game:GetService("Players").LocalPlayer
     if not lp then return nil end
 
-    -- 1. leaderstats
-    local leaderstats = lp:FindFirstChild("leaderstats")
-    if leaderstats then
-        for _, name in ipairs({"Gems", "Gem", "Diamonds", "Diamond"}) do
-            local valObj = leaderstats:FindFirstChild(name)
-            if valObj and valObj:IsA("ValueBase") then
-                if type(valObj.Value) == "number" then
-                    return valObj.Value
-                elseif type(valObj.Value) == "string" then
-                    local parsed = Utils.parseMoneyString(valObj.Value)
-                    if parsed then return parsed end
-                end
-            end
-        end
+    -- 1. ƯU TIÊN SỐ 1: Attribute "GrowthGemInventoryCount" chuẩn của game Sell Ores
+    local growthGems = lp:GetAttribute("GrowthGemInventoryCount")
+    if type(growthGems) == "number" then
+        return growthGems
     end
 
-    -- 2. Attributes
-    for _, attr in ipairs({"Gems", "Gem", "Diamonds", "Diamond"}) do
+    -- 2. Attributes khác
+    for _, attr in ipairs({"Gems", "Gem", "Diamonds", "Diamond", "GrowthGems"}) do
         local val = lp:GetAttribute(attr)
         if type(val) == "number" then
             return val
@@ -523,14 +513,17 @@ function Utils.getPlayerGems()
         end
     end
 
-    -- 3. PlayerData / Stats folder
-    for _, folderName in ipairs({"PlayerData", "Data", "Stats", "Currencies"}) do
-        local folder = lp:FindFirstChild(folderName)
-        if folder then
-            for _, name in ipairs({"Gems", "Gem", "Diamonds"}) do
-                local v = folder:FindFirstChild(name)
-                if v and v:IsA("ValueBase") and type(v.Value) == "number" then
-                    return v.Value
+    -- 3. leaderstats
+    local leaderstats = lp:FindFirstChild("leaderstats")
+    if leaderstats then
+        for _, name in ipairs({"Gems", "Gem", "Diamonds", "Diamond", "GrowthGems"}) do
+            local valObj = leaderstats:FindFirstChild(name)
+            if valObj and valObj:IsA("ValueBase") then
+                if type(valObj.Value) == "number" then
+                    return valObj.Value
+                elseif type(valObj.Value) == "string" then
+                    local parsed = Utils.parseMoneyString(valObj.Value)
+                    if parsed then return parsed end
                 end
             end
         end

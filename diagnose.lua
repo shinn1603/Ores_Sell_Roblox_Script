@@ -43,10 +43,14 @@ end
 local attrs = LocalPlayer:GetAttributes()
 local attrCount = 0
 for k, v in pairs(attrs) do
-    attrCount = attrCount + 1
-    log(string.format("  • Attribute: %s = %s (%s)", tostring(k), tostring(v), type(v)))
+    local kLow = tostring(k):lower()
+    -- Bỏ qua các attribute tầng/tunnel/drill rác để tránh tràn tin nhắn
+    if not kLow:find("tunnel") and not kLow:find("floor") and not kLow:find("drill") and not kLow:find("petability") and not kLow:find("regen") then
+        attrCount = attrCount + 1
+        log(string.format("  • Attribute: %s = %s (%s)", tostring(k), tostring(v), type(v)))
+    end
 end
-if attrCount == 0 then log("Attributes trên LocalPlayer: Không có") end
+if attrCount == 0 then log("Attributes trên LocalPlayer: Không có (đã lọc bớt thuộc tính tầng đào)") end
 
 for _, fName in ipairs({"PlayerData", "Data", "Stats", "Currencies"}) do
     local f = LocalPlayer:FindFirstChild(fName)
