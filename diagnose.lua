@@ -115,25 +115,20 @@ log("\n--- [4] CĂN CỨ (BASE) CỦA NGƯỜI CHƠI ---")
 local myBase = nil
 local bases = Workspace:FindFirstChild("Bases")
 if bases then
-    for _, b in ipairs(bases:GetChildren()) do
-        local peds = b:FindFirstChild("OrePedestals")
-        if peds then
-            for _, p in ipairs(peds:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and (p.ActionText == "Buy" or p.ActionText:find("Buy")) then
-                    myBase = b
-                    break
-                end
+    local assigned = LocalPlayer:GetAttribute("AssignedBaseName")
+    if assigned and bases:FindFirstChild(tostring(assigned)) then
+        myBase = bases[tostring(assigned)]
+    end
+    if not myBase then
+        for _, b in ipairs(bases:GetChildren()) do
+            if b.Name:lower():find(LocalPlayer.Name:lower()) then
+                myBase = b
+                break
             end
         end
-        if myBase then break end
     end
-end
-if not myBase and bases then
-    for _, b in ipairs(bases:GetChildren()) do
-        if b.Name:lower():find(LocalPlayer.Name:lower()) then
-            myBase = b
-            break
-        end
+    if not myBase and bases:FindFirstChild("Base5") then
+        myBase = bases["Base5"]
     end
 end
 log("Căn cứ xác định: " .. (myBase and myBase.Name or "KHÔNG TÌM THẤY"))

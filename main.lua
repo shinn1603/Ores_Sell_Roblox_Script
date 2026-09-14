@@ -175,7 +175,16 @@ function Utils.getMyBase()
     local bases = Workspace:FindFirstChild("Bases")
     if not bases then return nil end
 
-    -- 1. Ưu tiên số 1: Nhận diện trực tiếp qua Prompt hiển thị trên màn hình người chơi (ExpressivePromptsGui)
+    -- 1. ƯU TIÊN SỐ 1: Thuộc tính "AssignedBaseName" do game server cấp trực tiếp cho người chơi (Chuẩn 100%)
+    for _, attr in ipairs({"AssignedBaseName", "Base", "BaseName", "CurrentBase", "MyBase"}) do
+        local bName = LocalPlayer:GetAttribute(attr)
+        if bName and bases:FindFirstChild(tostring(bName)) then
+            cachedMyBase = bases[tostring(bName)]
+            return cachedMyBase
+        end
+    end
+
+    -- 2. Nhận diện qua Prompt hiển thị trên màn hình người chơi (ExpressivePromptsGui)
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
     local ep = pg and pg:FindFirstChild("ExpressivePromptsGui")
     if ep then
@@ -185,15 +194,6 @@ function Utils.getMyBase()
                 cachedMyBase = bases[baseName]
                 return cachedMyBase
             end
-        end
-    end
-
-    -- 2. Kiểm tra thuộc tính của người chơi (Attribute)
-    for _, attr in ipairs({"AssignedBaseName", "Base", "BaseName", "CurrentBase", "MyBase"}) do
-        local bName = LocalPlayer:GetAttribute(attr)
-        if bName and bases:FindFirstChild(tostring(bName)) then
-            cachedMyBase = bases[tostring(bName)]
-            return cachedMyBase
         end
     end
 
