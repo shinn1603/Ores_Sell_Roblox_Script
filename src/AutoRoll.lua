@@ -472,6 +472,9 @@ function AutoRoll.init(deps)
         local base = Utils.getMyBase()
         if not base or not base:FindFirstChild("OrePedestals") then return false end
 
+        local playerMoney = Utils.getPlayerMoney()
+        if not playerMoney then return false end -- Nếu không xác định được tiền thì không chặn roll
+
         for i = 1, 6 do
             local pedestal = base.OrePedestals:FindFirstChild("RolledOrePedestal" .. i)
             if pedestal then
@@ -481,7 +484,11 @@ function AutoRoll.init(deps)
                         if p:IsA("ProximityPrompt") and p.Enabled then
                             local act = p.ActionText:lower()
                             if (act:find("buy") or act:find("claim") or act:find("take") or act == "") and not act:find("place") then
-                                return true, oreName, i
+                                local orePrice = AutoRoll.getPedestalPrice(pedestal, p)
+                                -- Chỉ trả về true khi thực sự thiếu tiền mua quặng này
+                                if orePrice and playerMoney < orePrice then
+                                    return true, oreName, i
+                                end
                             end
                         end
                     end

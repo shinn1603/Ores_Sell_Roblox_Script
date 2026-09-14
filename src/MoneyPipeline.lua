@@ -22,7 +22,9 @@ function MoneyPipeline.init(deps)
                     if item:IsA("Tool") then
                         local n = item.Name:lower()
                         if not n:find("pickaxe") and not n:find("sword") and not n:find("weapon") and not n:find("gun") and not n:find("rod") and not n:find("potion") then
-                            if n:find("crate") or n:find("metal") or n:find("bar") or n:find("ore") or n:find("box") then
+                            -- Chỉ match thùng quặng (Crate / Box) hoặc kim loại nung (Metal / Bar / Ingot / Refined)
+                            -- Tuyệt đối không match quặng thông thường (ví dụ: Gold Ore, Stone Ore)
+                            if n:find("crate") or n:find("box") or n:find("metal") or n:find("bar") or n:find("ingot") or n:find("refined") then
                                 return item
                             end
                         end
@@ -42,7 +44,7 @@ function MoneyPipeline.init(deps)
     local function isRawCrateTool(tool)
         if not tool then return false end
         local n = tool.Name:lower()
-        return (n:find("crate") or n:find("raw") or n:find("ore") or n:find("box")) and not isRefinedTool(tool)
+        return (n:find("crate") or n:find("box")) and not isRefinedTool(tool)
     end
 
     function MoneyPipeline.run()
